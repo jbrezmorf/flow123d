@@ -358,31 +358,40 @@ void DarcyFlowMH_Steady::postprocess()
     int rank;
     MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
     
-    unsigned int n_loc_sides = 0;
-    for (unsigned int i_cell=0; i_cell < el_ds->lsize(); i_cell++)
-    {
-        typename DOFHandlerBase::CellIterator ele = mesh_->element(dh_->el_index(i_cell));
-        n_loc_sides += ele->n_sides();
-    }
-    
-    
-    IS is_loc;
-    VecScatter velocity_scatter;
+    const unsigned int n_loc_sides = side_ds->lsize();
     int loc_idx[n_loc_sides];
-
-    VecCreateMPI(PETSC_COMM_WORLD, n_loc_sides, PETSC_DECIDE, &velocity_par_);
-    
+    std::vector<int> dof_indices;
     unsigned int u=0;
     for (unsigned int i_cell=0; i_cell < el_ds->lsize(); i_cell++)
     {
         typename DOFHandlerBase::CellIterator ele = mesh_->element(dh_->el_index(i_cell));
-        for(unsigned int j=0; j< ele->n_sides(); j++)
-            loc_idx[u++] = side_row_4_id[ mh_dh.side_dof( ele->side(j) )];
+        unsigned int dim = ele->dim();
+        unsigned int ndofs; 
+        switch(dim)
+        {
+            case 1: 
+                ndofs = fe_rt1_->n_dofs();
+                break;
+            case 2: 
+                ndofs = fe_rt2_->n_dofs();
+                break;
+            case 3: 
+                ndofs = fe_rt3_->n_dofs();
+                break;
+        }
+        dof_indices.resize(ndofs);
+        
+        dh_->get_loc_dof_indices(ele, (unsigned int *)&(dof_indices[0]));
+        for(unsigned int j=0; j< ndofs; j++)
+            loc_idx[u++] = side_row_4_id[side_id_4_loc[dof_indices[j]]];
     }
     
     DBGMSG("n_loc_sides = %d, ucheck = %d\n", n_loc_sides, u);
     
-
+    IS is_loc;
+    VecScatter velocity_scatter;
+    
+    VecCreateMPI(PETSC_COMM_WORLD, n_loc_sides, PETSC_DECIDE, &velocity_par_);
     ISCreateGeneral(PETSC_COMM_WORLD, n_loc_sides, loc_idx, PETSC_COPY_VALUES, &(is_loc));
 //     ISView(is_loc, PETSC_VIEWER_STDOUT_SELF);
     
@@ -407,7 +416,7 @@ void DarcyFlowMH_Steady::postprocess()
     
     DBGMSG("Dof handler dof values (offset=%d):\n", dh_->loffset());
     
-    if(rank == 1)
+//     if(rank == 1)
     for (unsigned int i_cell=0; i_cell < dh_->el_ds()->lsize(); i_cell++)
     {
         typename DOFHandlerBase::CellIterator cell = mesh_->element(dh_->el_index(i_cell));
@@ -425,17 +434,29 @@ void DarcyFlowMH_Steady::postprocess()
                 ndofs = fe_rt3_->n_dofs();
                 break;
         }
-//         std::vector<int> dof_indices(ndofs);        
-//         dh_->get_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
+        std::vector<int> dof_indices(ndofs);        
+        dh_->get_loc_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
         std::vector<double> dof_values(ndofs);        
         dh_->get_dof_values(cell, velocity_par_,(double *)&(dof_values[0]));
         
+//         for (unsigned int i = 0; i < ndofs; i++) {
+//             double diff = std::abs(mh_dh.side_flux( *(cell->side(i)) ) - dof_values[i]);
+//             std::cout << "El = " << cell->index() << "\t mddh: " << mh_dh.side_flux(*(cell->side(i)) )
+//                 << "\t dh: " << dof_values[i] << " \t\t diff = " << diff;
+//                 if(diff < 1e-14) std::cout << std::endl;
+//                 else std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+//         }
+
         for (unsigned int i = 0; i < ndofs; i++) {
-            double diff = std::abs(mh_dh.side_flux( *(cell->side(i)) ) - dof_values[i]);
-            std::cout << "El = " << cell->index() << "\t mddh: " << mh_dh.side_flux(*(cell->side(i)) )
-                << "\t dh: " << dof_values[i] << " \t\t diff = " << diff;
-                if(diff < 1e-14) std::cout << std::endl;
-                else std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
+            int diff = side_row_4_id[mh_dh.side_dof( cell->side(i) )] - side_row_4_id[side_id_4_loc[dof_indices[i]]];
+            xprintf(Msg,"r=%d El = %d mhdh: %d side_row_4_id: %d \t dh: %d \t diff = %d\n", 
+                    rank,
+                    cell->index(), 
+                    mh_dh.side_dof(cell->side(i)), 
+                    side_row_4_id[mh_dh.side_dof( cell->side(i) )],
+                    dof_indices[i],
+                    diff
+                   );
         }
     }
     
