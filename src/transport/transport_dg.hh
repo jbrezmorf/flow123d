@@ -316,16 +316,16 @@ private:
 	template<unsigned int dim>
 	void set_boundary_conditions();
 
-	/**
-	 * @brief Calculates the velocity field on a given @p dim dimensional cell.
-	 *
-	 * @param cell     The cell.
-	 * @param velocity The computed velocity field (at quadrature points).
-	 * @param fv       The FEValues class providing the quadrature points
-	 *                 and the shape functions for velocity.
-	 */
-	template<unsigned int dim>
-	void calculate_velocity(const ElementFullIter &cell, std::vector<arma::vec3> &velocity, FEValuesBase<dim,3> &fv);
+// 	/**
+// 	 * @brief Calculates the velocity field on a given @p dim dimensional cell.
+// 	 *
+// 	 * @param cell     The cell.
+// 	 * @param velocity The computed velocity field (at quadrature points).
+// 	 * @param fv       The FEValues class providing the quadrature points
+// 	 *                 and the shape functions for velocity.
+// 	 */
+// 	template<unsigned int dim>
+// 	void calculate_velocity(const ElementFullIter &cell, std::vector<arma::vec3> &velocity, FEValuesBase<dim,3> &fv);
 
 	/**
 	 * @brief Calculates the dispersivity (diffusivity) tensor from the velocity field.

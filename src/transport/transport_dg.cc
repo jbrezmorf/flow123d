@@ -768,8 +768,6 @@ template<class Model>
 template<unsigned int dim>
 void TransportDG<Model>::assemble_volume_integrals()
 {
-    FEValues<dim,3> fv_rt(*feo->mapping<dim>(), *feo->q<dim>(), *feo->fe_rt<dim>(),
-    		update_values | update_gradients);
     FEValues<dim,3> fe_values(*feo->mapping<dim>(), *feo->q<dim>(), *feo->fe<dim>(),
     		update_values | update_gradients | update_JxW_values | update_quadrature_points);
     const unsigned int ndofs = feo->fe<dim>()->n_dofs(), qsize = feo->q<dim>()->size();
@@ -785,11 +783,12 @@ void TransportDG<Model>::assemble_volume_integrals()
         if (cell->dim() != dim) continue;
 
         fe_values.reinit(cell);
-        fv_rt.reinit(cell);
         ElementAccessor<3> ele_acc = cell->element_accessor();
         feo->dh()->get_dof_indices(cell, dof_indices);
+        
+        xprintf(Msg,"p%d  el_loc=%d  el=%d \t\t\t volume\n",feo->dh()->distr()->myp(),i_cell, cell->index());
+        velocity_->value_list(fe_values.point_list(), cell->element_accessor(), velocity);
 
-        calculate_velocity(cell, velocity, fv_rt);
         Model::compute_advection_diffusion_coefficients(fe_values.point_list(), velocity, ele_acc, ad_coef, dif_coef);
         Model::compute_sources_sigma(fe_values.point_list(), ele_acc, sources_sigma);
 
@@ -900,8 +899,6 @@ template<unsigned int dim>
 void TransportDG<Model>::assemble_fluxes_element_element()
 {
     vector<FESideValues<dim,3>*> fe_values;
-    FESideValues<dim,3> fsv_rt(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe_rt<dim>(),
-    		update_values);
     const unsigned int ndofs = feo->fe<dim>()->n_dofs(), qsize = feo->q<dim-1>()->size(),
     		n_max_sides = ad_coef_edg.size();
     vector<unsigned int*> side_dof_indices;
@@ -912,6 +909,7 @@ void TransportDG<Model>::assemble_fluxes_element_element()
 
     for (unsigned int sid=0; sid<n_max_sides; sid++)
     {
+        side_velocity[sid].resize(qsize);
     	side_dof_indices.push_back(new unsigned int[ndofs]);
     	fe_values.push_back(new FESideValues<dim,3>(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe<dim>(),
     			update_values | update_gradients | update_side_JxW_values | update_normal_vectors | update_quadrature_points));
@@ -929,8 +927,9 @@ void TransportDG<Model>::assemble_fluxes_element_element()
 			ElementAccessor<3> ele_acc = cell->element_accessor();
 			feo->dh()->get_dof_indices(cell, side_dof_indices[sid]);
 			fe_values[sid]->reinit(cell, edg->side(sid)->el_idx());
-			fsv_rt.reinit(cell, edg->side(sid)->el_idx());
-			calculate_velocity(cell, side_velocity[sid], fsv_rt);
+            
+            velocity_->value_list(fe_values[sid]->point_list(), cell->element_accessor(), side_velocity[sid]);
+            
 			Model::compute_advection_diffusion_coefficients(fe_values[sid]->point_list(), side_velocity[sid], ele_acc, ad_coef_edg[sid], dif_coef_edg[sid]);
 			dg_penalty[sid] = data_.dg_penalty.value(cell->centre(), ele_acc);
 		}
@@ -1032,12 +1031,10 @@ void TransportDG<Model>::assemble_fluxes_boundary()
 {
     FESideValues<dim,3> fe_values_side(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe<dim>(),
     		update_values | update_gradients | update_side_JxW_values | update_normal_vectors | update_quadrature_points);
-    FESideValues<dim,3> fsv_rt(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe_rt<dim>(),
-    		update_values);
     const unsigned int ndofs = feo->fe<dim>()->n_dofs(), qsize = feo->q<dim-1>()->size();
     unsigned int side_dof_indices[ndofs];
     PetscScalar local_matrix[ndofs*ndofs];
-    vector<arma::vec3> side_velocity;
+    vector<arma::vec3> side_velocity(qsize);
     vector<arma::vec> robin_sigma(qsize, arma::vec(n_substances()));
     arma::vec dg_penalty;
     double gamma_l;
@@ -1057,9 +1054,8 @@ void TransportDG<Model>::assemble_fluxes_boundary()
         ElementAccessor<3> ele_acc = cell->element_accessor();
         feo->dh()->get_dof_indices(cell, side_dof_indices);
         fe_values_side.reinit(cell, side->el_idx());
-        fsv_rt.reinit(cell, side->el_idx());
 
-        calculate_velocity(cell, side_velocity, fsv_rt);
+        velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), side_velocity);
         Model::compute_advection_diffusion_coefficients(fe_values_side.point_list(), side_velocity, ele_acc, ad_coef, dif_coef);
         dg_penalty = data_.dg_penalty.value(cell->centre(), ele_acc);
         arma::uvec bc_type = data_.bc_type.value(side->cond()->element()->centre(), side->cond()->element_accessor());
@@ -1129,16 +1125,12 @@ void TransportDG<Model>::assemble_fluxes_element_side()
     		update_values | update_gradients | update_JxW_values | update_quadrature_points);
     FESideValues<dim,3> fe_values_side(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe<dim>(),
     		update_values | update_gradients | update_side_JxW_values | update_normal_vectors | update_quadrature_points);
-    FESideValues<dim,3> fsv_rt(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe_rt<dim>(),
-       		update_values);
-    FEValues<dim-1,3> fv_rt(*feo->mapping<dim-1>(), *feo->q<dim-1>(), *feo->fe_rt<dim-1>(),
-       		update_values);
 
     vector<FEValuesSpaceBase<3>*> fv_sb(2);
     const unsigned int ndofs = feo->fe<dim>()->n_dofs();    // number of local dofs
     const unsigned int qsize = feo->q<dim-1>()->size();     // number of quadrature points
     unsigned int side_dof_indices[2*ndofs], n_dofs[2];
-	vector<arma::vec3> velocity_higher, velocity_lower;
+	vector<arma::vec3> velocity_higher(qsize), velocity_lower(qsize);
 	vector<arma::vec> frac_sigma(qsize, arma::vec(n_substances()));
 	vector<double> csection_lower(qsize), csection_higher(qsize), mm_coef_lower(qsize), mm_coef_higher(qsize);
     PetscScalar local_matrix[4*ndofs*ndofs];
@@ -1170,11 +1162,9 @@ void TransportDG<Model>::assemble_fluxes_element_side()
 		int element_id[2];
 		element_id[0] = cell_sub.index();
 		element_id[1] = cell.index();
-
-		fsv_rt.reinit(cell, nb->side()->el_idx());
-		fv_rt.reinit(cell_sub);
-		calculate_velocity(cell, velocity_higher, fsv_rt);
-		calculate_velocity(cell_sub, velocity_lower, fv_rt);
+		
+        velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), velocity_higher);
+        velocity_->value_list(fe_values_vb.point_list(), cell->element_accessor(), velocity_lower);
 		Model::compute_advection_diffusion_coefficients(fe_values_vb.point_list(), velocity_lower, cell_sub->element_accessor(), ad_coef_edg[0], dif_coef_edg[0]);
 		Model::compute_advection_diffusion_coefficients(fe_values_vb.point_list(), velocity_higher, cell->element_accessor(), ad_coef_edg[1], dif_coef_edg[1]);
 		Model::compute_mass_matrix_coefficient(fe_values_vb.point_list(), cell_sub->element_accessor(), mm_coef_lower);
@@ -1255,8 +1245,7 @@ void TransportDG<Model>::set_boundary_conditions()
 {
     FESideValues<dim,3> fe_values_side(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe<dim>(),
     		update_values | update_gradients | update_normal_vectors | update_side_JxW_values | update_quadrature_points);
-    FESideValues<dim,3> fsv_rt(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe_rt<dim>(),
-           		update_values);
+
     const unsigned int ndofs = feo->fe<dim>()->n_dofs(), qsize = feo->q<dim-1>()->size();
     vector<int> side_dof_indices(ndofs);
     unsigned int loc_b=0;
@@ -1266,7 +1255,7 @@ void TransportDG<Model>::set_boundary_conditions()
     vector<arma::vec> bc_values(qsize, arma::vec(n_substances())),
     		bc_fluxes(qsize, arma::vec(n_substances())),
 			bc_sigma(qsize, arma::vec(n_substances()));
-	vector<arma::vec3> velocity;
+	vector<arma::vec3> velocity(qsize);
 
     for (unsigned int loc_el = 0; loc_el < feo->dh()->el_ds()->lsize(); loc_el++)
     {
@@ -1293,8 +1282,7 @@ void TransportDG<Model>::set_boundary_conditions()
 			arma::uvec bc_type = data_.bc_type.value(side->cond()->element()->centre(), ele_acc);
 
 			fe_values_side.reinit(cell, side->el_idx());
-			fsv_rt.reinit(cell, side->el_idx());
-			calculate_velocity(cell, velocity, fsv_rt);
+            velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), velocity);
 
 			Model::compute_advection_diffusion_coefficients(fe_values_side.point_list(), velocity, side->element()->element_accessor(), ad_coef, dif_coef);
 			Model::compute_dirichlet_bc(fe_values_side.point_list(), ele_acc, bc_values);
@@ -1387,21 +1375,24 @@ void TransportDG<Model>::set_boundary_conditions()
 
 
 
-template<class Model>
-template<unsigned int dim>
-void TransportDG<Model>::calculate_velocity(const typename DOFHandlerBase::CellIterator &cell, vector<arma::vec3> &velocity, FEValuesBase<dim,3> &fv)
-{
-	ASSERT(cell->dim() == dim, "Element dimension mismatch!");
-
-    velocity.resize(fv.n_points());
-
-    for (unsigned int k=0; k<fv.n_points(); k++)
-    {
-        velocity[k].zeros();
-        for (unsigned int sid=0; sid<cell->n_sides(); sid++)
-            velocity[k] += fv.shape_vector(sid,k) * mh_dh->side_flux( *(cell->side(sid)) );
-    }
-}
+// template<class Model>
+// template<unsigned int dim>
+// void TransportDG<Model>::calculate_velocity(const typename DOFHandlerBase::CellIterator &cell, vector<arma::vec3> &velocity, FEValuesBase<dim,3> &fv)
+// {
+// 	ASSERT(cell->dim() == dim, "Element dimension mismatch!");
+// 
+// 
+//     velocity.resize(fv.n_points());
+//     velocity_->value_list(fv.point_list(), cell->element_accessor(), velocity);
+// 
+// //     for (unsigned int k=0; k<fv.n_points(); k++)
+// //     {
+// //         velocity[k] = velocity_->value(fv.point(k), cell->element_accessor());
+// //         velocity[k].zeros();
+// //         for (unsigned int sid=0; sid<cell->n_sides(); sid++)
+// //             velocity[k] += fv.shape_vector(sid,k) * mh_dh->side_flux( *(cell->side(sid)) );
+// //     }
+// }
 
 
 
@@ -1634,8 +1625,7 @@ void TransportDG<Model>::calc_fluxes(vector<vector<double> > &bcd_balance, vecto
 {
 	FESideValues<dim,3> fe_values(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe<dim>(),
 			update_values | update_gradients | update_normal_vectors | update_side_JxW_values | update_quadrature_points);
-	FESideValues<dim,3> fsv_rt(*feo->mapping<dim>(), *feo->q<dim-1>(), *feo->fe_rt<dim>(),
-			update_values);
+
 	const unsigned int ndofs = feo->fe<dim>()->n_dofs(), qsize = feo->q<dim-1>()->size();
 	unsigned int dof_indices[ndofs];
 	vector<arma::vec3> side_velocity(qsize);
@@ -1658,9 +1648,10 @@ void TransportDG<Model>::calc_fluxes(vector<vector<double> > &bcd_balance, vecto
         unsigned int bc_region_idx = r.boundary_idx();
 
 		fe_values.reinit(cell, side->el_idx());
-		fsv_rt.reinit(cell, side->el_idx());
+
 		feo->dh()->get_dof_indices(cell, dof_indices);
-		calculate_velocity(cell, side_velocity, fsv_rt);
+        velocity_->value_list(fe_values.point_list(), cell->element_accessor(), side_velocity);
+        
 		Model::compute_advection_diffusion_coefficients(fe_values.point_list(), side_velocity, ele_acc, ad_coef, dif_coef);
 		Model::compute_dirichlet_bc(fe_values.point_list(), side->cond()->element_accessor(), bc_values);
         data_.bc_flux.value_list(fe_values.point_list(), side->cond()->element_accessor(), bc_fluxes);
