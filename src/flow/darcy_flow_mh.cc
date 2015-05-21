@@ -460,6 +460,22 @@ void DarcyFlowMH_Steady::postprocess()
         }
     }
     
+    for (unsigned int i_cell=0; i_cell<el_ds->lsize(); i_cell++)
+    {
+        typename DOFHandlerBase::CellIterator cell = mesh_->element(dh_->el_index(i_cell));
+
+        ElementAccessor<3> ele_acc = cell->element_accessor();
+        std::vector<arma::vec3> velocity(1);
+        std::vector<arma::vec3> points;
+        points.push_back(cell->centre());
+        
+        velocity_->value_list(points, cell->element_accessor(), velocity);
+        xprintf(Msg,"p%d  el_loc=%d  el=%d vel=[%f %f %f]\n",
+                el_ds->myp(),i_cell, cell->index(),
+                velocity[0][0], velocity[0][1], velocity[0][2]
+               );
+    }
+    
     
     //ElementFullIter ele = ELEMENT_FULL_ITER(mesh_, NULL);
 

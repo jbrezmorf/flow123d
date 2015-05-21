@@ -20,7 +20,7 @@ class ReactionTerm;
 class ConvectionTransport;
 class Semchem_interface;
 
-
+template<int spacedim, class Value> class FieldFE;
 
 
 
@@ -40,6 +40,7 @@ public:
      * TODO: We should pass whole velocity field object (description of base functions and dof numbering) and vector.
      */
     virtual void set_velocity_field(const MH_DofHandler &dh) = 0;
+    virtual void set_velocity_field(FieldFE<3, FieldValue<3>::VectorFixed> * vel) = 0;
 
     virtual unsigned int n_substances() = 0;
 
@@ -99,6 +100,9 @@ public:
     	mh_dh=&dh;
     }
 
+    virtual void set_velocity_field(FieldFE<3, FieldValue<3>::VectorFixed> * vel) override {
+        velocity_ = vel;
+    }
 
     /// Returns number of trnasported substances.
     inline unsigned int n_substances() override { return n_subst_; }
@@ -126,6 +130,7 @@ protected:
      * data. Possibly make more general set_data method, allowing setting data given by name. needs support from EqDataBase.
      */
     const MH_DofHandler *mh_dh;
+    FieldFE<3, FieldValue<3>::VectorFixed> *velocity_;
 
     /// (new) object for calculation and writing the mass balance to file.
     boost::shared_ptr<Balance> balance_;
@@ -186,6 +191,7 @@ public:
     virtual ~TransportOperatorSplitting();
 
     virtual void set_velocity_field(const MH_DofHandler &dh) override;
+    virtual void set_velocity_field(FieldFE<3, FieldValue<3>::VectorFixed> * vel) override;
 
     void zero_time_step() override;
     void update_solution() override;

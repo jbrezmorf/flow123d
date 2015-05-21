@@ -322,6 +322,12 @@ void TransportOperatorSplitting::set_velocity_field(const MH_DofHandler &dh)
 	convection->set_velocity_field( dh );
 };
 
+void TransportOperatorSplitting::set_velocity_field(FieldFE< 3, FieldValue_< 3, 1, double > >* vel)
+{
+    velocity_ = vel;
+    convection->set_velocity_field( vel );
+}
+
 
 
 
