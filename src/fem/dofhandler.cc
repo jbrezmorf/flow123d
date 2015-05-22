@@ -241,8 +241,8 @@
 
 
 
-DOFHandlerMultiDim::DOFHandlerMultiDim(Mesh& _mesh)
-	: DOFHandlerBase(_mesh),
+DOFHandlerMultiDim::DOFHandlerMultiDim(Mesh& _mesh, bool is_sequential)
+	: DOFHandlerBase(_mesh,is_sequential),
 	  fe1d_(0),
 	  fe2d_(0),
 	  fe3d_(0)
@@ -251,7 +251,7 @@ DOFHandlerMultiDim::DOFHandlerMultiDim(Mesh& _mesh)
 	for (unsigned int i=0; i<mesh_->n_elements(); i++)
 		object_dofs[i] = NULL;
 
-	make_elem_partitioning();
+    make_elem_partitioning();
 }
 
 void DOFHandlerMultiDim::distribute_dofs(FiniteElement<1, 3>& fe1d,
@@ -291,55 +291,80 @@ void DOFHandlerMultiDim::distribute_dofs(FiniteElement<1, 3>& fe1d,
 			n_obj_dofs[3][dm] += fe3d.n_object_dofs(dm, dof_multiplicities[m])*dof_multiplicities[m];
 	}
 
-    // Broadcast partition of elements to all processes.
-    int *loc_part;
-    unsigned int myp = mesh_->get_part()->get_init_distr()->myp();
-    if (myp == 0)
+	if(! is_sequential_)    // parallel DoFHandler
     {
-    	loc_part = (int*)mesh_->get_part()->get_loc_part();
+        // Broadcast partition of elements to all processes.
+        int *loc_part;
+        unsigned int myp = mesh_->get_part()->get_init_distr()->myp();
+        if (myp == 0)
+        {
+            loc_part = (int*)mesh_->get_part()->get_loc_part();
+        }
+        else
+        {
+            loc_part = new int[mesh_->n_elements()];
+        }
+        MPI_Bcast(loc_part, mesh_->n_elements(), MPI_INT, 0, mesh_->get_part()->get_init_distr()->get_comm());
+    
+        // Distribute element dofs.
+        // First we distribute dofs on elements associated to process 0 and so on.
+        for (unsigned int proc=0; proc<mesh_->get_part()->get_init_distr()->np(); proc++)
+        {
+            if (proc == myp)
+                loffset_ = next_free_dof;
+
+            FOR_ELEMENTS(mesh_, cell)
+            {
+                if (loc_part[cell.index()] != (int)proc) continue;
+
+                unsigned int dim = cell->dim();
+
+                // distribute dofs
+                // TODO: For the moment we distribute only dofs associated to the cell
+                //       In the future we want to distribute dofs on vertices, lines,
+                //       and triangles as well.
+                object_dofs[cell.index()] = new int*[dim+1];
+                for (unsigned int i=0; i<dim+1; i++)
+                    object_dofs[cell.index()][i] = NULL;
+                object_dofs[cell.index()][dim] = new int[n_obj_dofs[dim][dim]];
+
+                for (unsigned int i=0; i<n_obj_dofs[dim][dim]; i++)
+                object_dofs[cell.index()][dim][i] = next_free_dof++;
+            }
+
+            if (proc == myp) {
+                lsize_ = next_free_dof - loffset_;
+                ds_ = new Distribution(lsize_, PETSC_COMM_WORLD);
+            }
+        }
+        
+        // Finally we free the unused array loc_part.
+        if (mesh_->get_part()->get_init_distr()->myp() != 0)
+            delete[] loc_part;
     }
-    else
-    {
-    	loc_part = new int[mesh_->n_elements()];
+    else{       // sequential DoFHandler
+        FOR_ELEMENTS(mesh_, cell)
+        {
+            unsigned int dim = cell->dim();
+
+            // distribute dofs
+            // TODO: For the moment we distribute only dofs associated to the cell
+            //       In the future we want to distribute dofs on vertices, lines,
+            //       and triangles as well.
+            object_dofs[cell.index()] = new int*[dim+1];
+            for (unsigned int i=0; i<dim+1; i++)
+                object_dofs[cell.index()][i] = NULL;
+            object_dofs[cell.index()][dim] = new int[n_obj_dofs[dim][dim]];
+
+            for (unsigned int i=0; i<n_obj_dofs[dim][dim]; i++)
+                object_dofs[cell.index()][dim][i] = next_free_dof++;
+        }
+
+        // now it is equal global size = n_dofs
+        lsize_ = next_free_dof - offset;
+        ds_ = nullptr;
     }
-    MPI_Bcast(loc_part, mesh_->n_elements(), MPI_INT, 0, mesh_->get_part()->get_init_distr()->get_comm());
-
-    // Distribute element dofs.
-    // First we distribute dofs on elements associated to process 0 and so on.
-    for (unsigned int proc=0; proc<mesh_->get_part()->get_init_distr()->np(); proc++)
-    {
-    	if (proc == myp)
-    		loffset_ = next_free_dof;
-
-    	FOR_ELEMENTS(mesh_, cell)
-		{
-    		if (loc_part[cell.index()] != (int)proc) continue;
-
-    		unsigned int dim = cell->dim();
-
-    		// distribute dofs
-			// TODO: For the moment we distribute only dofs associated to the cell
-			//       In the future we want to distribute dofs on vertices, lines,
-			//       and triangles as well.
-			object_dofs[cell.index()] = new int*[dim+1];
-			for (unsigned int i=0; i<dim+1; i++)
-				object_dofs[cell.index()][i] = NULL;
-			object_dofs[cell.index()][dim] = new int[n_obj_dofs[dim][dim]];
-
-			for (unsigned int i=0; i<n_obj_dofs[dim][dim]; i++)
-			   object_dofs[cell.index()][dim][i] = next_free_dof++;
-    	}
-
-    	if (proc == myp) {
-    		lsize_ = next_free_dof - loffset_;
-    		ds_ = new Distribution(lsize_, PETSC_COMM_WORLD);
-    	}
-    }
-
-    // Finally we free the unused array loc_part.
-    if (mesh_->get_part()->get_init_distr()->myp() != 0)
-    	delete[] loc_part;
-
+    
     n_dofs = next_free_dof - offset;
 }
 

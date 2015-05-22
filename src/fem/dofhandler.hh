@@ -54,7 +54,9 @@ public:
      * @brief Constructor.
      * @param _mesh The mesh.
      */
-    DOFHandlerBase(Mesh &_mesh) : global_dof_offset(0), n_dofs(0), lsize_(0), mesh_(&_mesh) {};
+    DOFHandlerBase(Mesh &_mesh, bool is_sequential = false)
+    : global_dof_offset(0), n_dofs(0), lsize_(0),
+      mesh_(&_mesh), is_sequential_(is_sequential) {};
 
     /**
      * @brief Alias for iterator over cells.
@@ -156,6 +158,10 @@ protected:
      */
     Distribution *ds_;
 
+    /**
+     * @brief Flag for sequential DoFHandler.
+     */
+    bool is_sequential_;
 };
 
 
@@ -263,7 +269,7 @@ public:
      * @brief Constructor.
      * @param _mesh The mesh.
      */
-    DOFHandlerMultiDim(Mesh &_mesh);
+    DOFHandlerMultiDim(Mesh &_mesh, bool is_sequential = false);
 
     /**
      * @brief Alias for iterator over cells.
