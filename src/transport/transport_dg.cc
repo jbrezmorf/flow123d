@@ -786,7 +786,6 @@ void TransportDG<Model>::assemble_volume_integrals()
         ElementAccessor<3> ele_acc = cell->element_accessor();
         feo->dh()->get_dof_indices(cell, dof_indices);
         
-        xprintf(Msg,"p%d  el_loc=%d  el=%d \t\t\t volume\n",feo->dh()->distr()->myp(),i_cell, cell->index());
         velocity_->value_list(fe_values.point_list(), cell->element_accessor(), velocity);
 
         Model::compute_advection_diffusion_coefficients(fe_values.point_list(), velocity, ele_acc, ad_coef, dif_coef);

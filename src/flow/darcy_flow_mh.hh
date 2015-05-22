@@ -192,6 +192,9 @@ public:
        return mh_dh;
     }
     
+    /// @brief Returns velocity as a pointer to a FieldFE object.
+    /** At the moment it is sequential and uses petsc scattered sol_vec.
+     */
     FieldFE<3, FieldValue<3>::VectorFixed> * get_velocity() const
     {return velocity_;}
     
@@ -214,16 +217,19 @@ protected:
     Vec velocity_vector;
     MH_DofHandler mh_dh;    // provides access to seq. solution fluxes and pressures on sides
     
+    /// @name Results FieldFE supporting objects.
+    //@{ 
+        FE_RT0<1,3> *fe_rt1_;               ///< RT0 FE for velocity (1d).
+        FE_RT0<2,3> *fe_rt2_;               ///< RT0 FE for velocity (2d).
+        FE_RT0<3,3> *fe_rt3_;               ///< RT0 FE for velocity (3d).
+        DOFHandlerMultiDim *velocity_dh_;   ///< Velocity dofhandler (sequential at the moment).
+        
+        MappingP1<1,3> *map1_;              ///< Mapping for velocity FieldFE (1d).
+        MappingP1<2,3> *map2_;              ///< Mapping for velocity FieldFE (2d).
+        MappingP1<3,3> *map3_;              ///< Mapping for velocity FieldFE (3d).
+        FieldFE<3, FieldValue<3>::VectorFixed> *velocity_;  ///< Velocity FieldFE object (sequential at the moment).
+    //@}
     
-    FE_RT0<1,3> *fe_rt1_;
-    FE_RT0<2,3> *fe_rt2_;
-    FE_RT0<3,3> *fe_rt3_;
-    DOFHandlerMultiDim *dh_;
-    MappingP1<1,3> *map1_;
-    MappingP1<2,3> *map2_;
-    MappingP1<3,3> *map3_;
-    FieldFE<3, FieldValue<3>::VectorFixed> *velocity_;
-
     MortarMethod mortar_method_;
 
     /// object for calculation and writing the water balance to file.
@@ -367,7 +373,6 @@ protected:
 
 	// gather of the solution
 	Vec sol_vec;			                 //< vector over solution array
-	Vec velocity_par_;                       //< parallel vector of solution for velocity only
 	VecScatter par_to_all;
         
   EqData data_;

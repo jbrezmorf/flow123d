@@ -276,8 +276,8 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
     fe_rt1_ = new FE_RT0<1,3>();
     fe_rt2_ = new FE_RT0<2,3>();
     fe_rt3_ = new FE_RT0<3,3>();
-    dh_ = new DOFHandlerMultiDim(*mesh_);
-    dh_->distribute_dofs(*fe_rt1_, *fe_rt2_, *fe_rt3_);
+    velocity_dh_ = new DOFHandlerMultiDim(*mesh_, true);            // create sequential velocity dofhandler
+    velocity_dh_->distribute_dofs(*fe_rt1_, *fe_rt2_, *fe_rt3_);    // velocity is in the begining -> offset is zero
     
     map1_ = new MappingP1<1,3>();
     map2_ = new MappingP1<2,3>();
@@ -357,7 +357,8 @@ void DarcyFlowMH_Steady::postprocess()
     
     int rank;
     MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
-    
+
+/*  // Parallel velocity scattering.  
     const unsigned int n_loc_sides = side_ds->lsize();
     int loc_idx[n_loc_sides];
     std::vector<int> dof_indices;
@@ -389,7 +390,6 @@ void DarcyFlowMH_Steady::postprocess()
     DBGMSG("n_loc_sides = %d, ucheck = %d\n", n_loc_sides, u);
     
     IS is_loc;
-    VecScatter velocity_scatter;
     
     VecCreateMPI(PETSC_COMM_WORLD, n_loc_sides, PETSC_DECIDE, &velocity_par_);
     ISCreateGeneral(PETSC_COMM_WORLD, n_loc_sides, loc_idx, PETSC_COPY_VALUES, &(is_loc));
@@ -399,27 +399,57 @@ void DarcyFlowMH_Steady::postprocess()
     ISGetSize(is_loc, &is_size);
     DBGMSG("is size:%d\n",is_size);
     
-    VecScatterCreate(schur0->get_solution(), is_loc, velocity_par_, PETSC_NULL, &velocity_scatter);
+    VecScatterCreate(schur0->get_solution(), is_loc, velocity_par_, PETSC_NULL, &velocity_scatter_);
     ISDestroy(&(is_loc));
             
-    VecScatterBegin(velocity_scatter, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(  velocity_scatter, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterDestroy(&velocity_scatter);
+    VecScatterBegin(velocity_scatter_, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  velocity_scatter_, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
+*/
+
+/*    // Sequential velocity scattering.    
+    int loc_idx[velocity_dh_->n_global_dofs()];
+    std::vector<int> dof_indices;
+    unsigned int u=0;
+    FOR_ELEMENTS(mesh_, ele) {
+        FOR_ELEMENT_SIDES(ele,si) {
+            loc_idx[u++] = side_row_4_id[ mh_dh.side_dof( ele->side(si) ) ];
+        }
+    }
     
-//     VecView(schur0->get_solution(),  PETSC_VIEWER_STDOUT_SELF );
-//     VecView(velocity_par_,  PETSC_VIEWER_STDOUT_SELF );
+    ASSERT( u == dh_->n_global_dofs(),"Size of array does not match number of fills.\n");
     
-    velocity_->set_fe_data(dh_, map1_, map2_, map3_, &(velocity_par_));
+    IS is_loc;
+    
+    VecCreateSeq(PETSC_COMM_SELF, dh_->n_global_dofs(), &velocity_par_);
+    ISCreateGeneral(PETSC_COMM_SELF, dh_->n_global_dofs(), loc_idx, PETSC_COPY_VALUES, &(is_loc));
+//     ISView(is_loc, PETSC_VIEWER_STDOUT_SELF);
+    
+    int is_size;
+    ISGetSize(is_loc, &is_size);
+    DBGMSG("is size:%d\n",is_size);
+    
+    VecScatterCreate(schur0->get_solution(), is_loc, velocity_par_, PETSC_NULL, &velocity_scatter_);
+    ISDestroy(&(is_loc));
+    
+    VecScatterBegin(velocity_scatter_, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
+    VecScatterEnd(  velocity_scatter_, schur0->get_solution(), velocity_par_, INSERT_VALUES, SCATTER_FORWARD);
+*/
+    
+//         VecView(schur0->get_solution(),  PETSC_VIEWER_STDOUT_SELF );
+//         VecView(velocity_par_,  PETSC_VIEWER_STDOUT_WORLD );
+//         VecView(sol_vec,  PETSC_VIEWER_STDOUT_WORLD );
+    
+    
+//     DBGMSG("Dof handler dof values (offset=%d):\n", velocity_dh_->loffset());
+    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
     velocity_->set_time(time_->step());
     
     get_mh_dofhandler();
-    
-    DBGMSG("Dof handler dof values (offset=%d):\n", dh_->loffset());
-    
+    /*
 //     if(rank == 1)
-    for (unsigned int i_cell=0; i_cell < dh_->el_ds()->lsize(); i_cell++)
+    for (unsigned int i_cell=0; i_cell < velocity_dh_->el_ds()->lsize(); i_cell++)
     {
-        typename DOFHandlerBase::CellIterator cell = mesh_->element(dh_->el_index(i_cell));
+        typename DOFHandlerBase::CellIterator cell = mesh_->element(velocity_dh_->el_index(i_cell));
         unsigned int dim = cell->dim();
         unsigned int ndofs; 
         switch(dim)
@@ -435,9 +465,9 @@ void DarcyFlowMH_Steady::postprocess()
                 break;
         }
         std::vector<int> dof_indices(ndofs);        
-        dh_->get_loc_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
+        velocity_dh_->get_loc_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
         std::vector<double> dof_values(ndofs);        
-        dh_->get_dof_values(cell, velocity_par_,(double *)&(dof_values[0]));
+        velocity_dh_->get_dof_values(cell, sol_vec,(double *)&(dof_values[0]));
         
 //         for (unsigned int i = 0; i < ndofs; i++) {
 //             double diff = std::abs(mh_dh.side_flux( *(cell->side(i)) ) - dof_values[i]);
@@ -459,19 +489,34 @@ void DarcyFlowMH_Steady::postprocess()
                    );
         }
     }
+    */
     
-    for (unsigned int i_cell=0; i_cell<el_ds->lsize(); i_cell++)
-    {
-        typename DOFHandlerBase::CellIterator cell = mesh_->element(dh_->el_index(i_cell));
+//     for (unsigned int i_cell=0; i_cell<el_ds->lsize(); i_cell++)
+//     {
+//         typename DOFHandlerBase::CellIterator cell = mesh_->element(dh_->el_index(i_cell));
+// 
+//         ElementAccessor<3> ele_acc = cell->element_accessor();
+//         std::vector<arma::vec3> velocity(1);
+//         std::vector<arma::vec3> points;
+//         points.push_back(cell->centre());
+//         
+//         velocity_->value_list(points, cell->element_accessor(), velocity);
+//         xprintf(Msg,"p%d  el_loc=%d  el=%d vel=[%f %f %f]\n",
+//                 el_ds->myp(),i_cell, cell->index(),
+//                 velocity[0][0], velocity[0][1], velocity[0][2]
+//                );
+//     }
+    
+    FOR_ELEMENTS(mesh_, ele) {
+        typename DOFHandlerBase::CellIterator cell = mesh_->element(ele->index());
 
-        ElementAccessor<3> ele_acc = cell->element_accessor();
         std::vector<arma::vec3> velocity(1);
         std::vector<arma::vec3> points;
         points.push_back(cell->centre());
         
         velocity_->value_list(points, cell->element_accessor(), velocity);
-        xprintf(Msg,"p%d  el_loc=%d  el=%d vel=[%f %f %f]\n",
-                el_ds->myp(),i_cell, cell->index(),
+        xprintf(Msg,"p%d  is_local=%d  el=%d vel=[%f %f %f]\n",
+                el_ds->myp(), velocity_dh_->el_is_local(cell->index()), cell->index(),
                 velocity[0][0], velocity[0][1], velocity[0][2]
                );
     }
@@ -1641,9 +1686,8 @@ DarcyFlowMH_Steady::~DarcyFlowMH_Steady() {
 	VecScatterDestroy(&par_to_all);
     
     delete velocity_;
-    VecDestroy(&velocity_par_);
     
-    delete dh_;
+    delete velocity_dh_;
     delete fe_rt1_;
     delete fe_rt2_;
     delete fe_rt3_;
