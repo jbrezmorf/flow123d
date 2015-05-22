@@ -355,8 +355,14 @@ void DarcyFlowMH_Steady::postprocess()
 {
     START_TIMER("postprocess");
     
-    int rank;
-    MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
+    // set velocity FieldFE after solving the linsys
+    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
+    velocity_->set_time(time_->step());
+    
+    get_mh_dofhandler();
+    
+//     int rank;
+//     MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
 
 /*  // Parallel velocity scattering.  
     const unsigned int n_loc_sides = side_ds->lsize();
@@ -441,15 +447,12 @@ void DarcyFlowMH_Steady::postprocess()
     
     
 //     DBGMSG("Dof handler dof values (offset=%d):\n", velocity_dh_->loffset());
-    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
-    velocity_->set_time(time_->step());
-    
-    get_mh_dofhandler();
-    /*
+
+
 //     if(rank == 1)
-    for (unsigned int i_cell=0; i_cell < velocity_dh_->el_ds()->lsize(); i_cell++)
-    {
-        typename DOFHandlerBase::CellIterator cell = mesh_->element(velocity_dh_->el_index(i_cell));
+/*
+    FOR_ELEMENTS(mesh_, ele) {
+        typename DOFHandlerBase::CellIterator cell = mesh_->element(ele->index());
         unsigned int dim = cell->dim();
         unsigned int ndofs; 
         switch(dim)
@@ -465,7 +468,7 @@ void DarcyFlowMH_Steady::postprocess()
                 break;
         }
         std::vector<int> dof_indices(ndofs);        
-        velocity_dh_->get_loc_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
+        velocity_dh_->get_dof_indices(cell, (unsigned int *)&(dof_indices[0]));
         std::vector<double> dof_values(ndofs);        
         velocity_dh_->get_dof_values(cell, sol_vec,(double *)&(dof_values[0]));
         
@@ -478,9 +481,8 @@ void DarcyFlowMH_Steady::postprocess()
 //         }
 
         for (unsigned int i = 0; i < ndofs; i++) {
-            int diff = side_row_4_id[mh_dh.side_dof( cell->side(i) )] - side_row_4_id[side_id_4_loc[dof_indices[i]]];
-            xprintf(Msg,"r=%d El = %d mhdh: %d side_row_4_id: %d \t dh: %d \t diff = %d\n", 
-                    rank,
+            int diff = side_row_4_id[mh_dh.side_dof( cell->side(i) )] - side_row_4_id[dof_indices[i]];
+            xprintf(Msg,"El = %d mhdh: %d side_row_4_id: %d \t dh: %d \t diff = %d\n", 
                     cell->index(), 
                     mh_dh.side_dof(cell->side(i)), 
                     side_row_4_id[mh_dh.side_dof( cell->side(i) )],
@@ -489,7 +491,7 @@ void DarcyFlowMH_Steady::postprocess()
                    );
         }
     }
-    */
+    //*/
     
 //     for (unsigned int i_cell=0; i_cell<el_ds->lsize(); i_cell++)
 //     {
@@ -506,7 +508,8 @@ void DarcyFlowMH_Steady::postprocess()
 //                 velocity[0][0], velocity[0][1], velocity[0][2]
 //                );
 //     }
-    
+
+/*
     FOR_ELEMENTS(mesh_, ele) {
         typename DOFHandlerBase::CellIterator cell = mesh_->element(ele->index());
 
@@ -520,7 +523,7 @@ void DarcyFlowMH_Steady::postprocess()
                 velocity[0][0], velocity[0][1], velocity[0][2]
                );
     }
-    
+//*/    
     
     //ElementFullIter ele = ELEMENT_FULL_ITER(mesh_, NULL);
 
@@ -658,6 +661,9 @@ void DarcyFlowMH_Steady::assembly_steady_mh_matrix()
     FEValues<2,3> fv_rt2(*map2_, qq2, *fe_rt2_, update_values | update_gradients | update_JxW_values | update_quadrature_points);
     FEValues<3,3> fv_rt3(*map3_, qq3, *fe_rt3_, update_values | update_gradients | update_JxW_values | update_quadrature_points);
 
+    // temporary array of dof indices for different dimensions (max 4 for 3d)
+    unsigned int dof_indices [4];
+    
     class Boundary *bcd;
     class Neighbour *ngh;
 
@@ -680,8 +686,12 @@ void DarcyFlowMH_Steady::assembly_steady_mh_matrix()
     for (unsigned int i_loc = 0; i_loc < el_ds->lsize(); i_loc++) {
         arma::mat local_matrix;
         ele = mesh_->element(el_4_loc[i_loc]);
+        
         el_row = row_4_el[el_4_loc[i_loc]];
         unsigned int nsides = ele->n_sides();
+
+        // when parallel, change it to get_loc_dof_indices
+        velocity_dh_->get_dof_indices(ele, dof_indices);
         
         if (fill_matrix) {
             switch( ele->dim() ) {
@@ -704,9 +714,9 @@ void DarcyFlowMH_Steady::assembly_steady_mh_matrix()
         }
         
         double cross_section = data_.cross_section.value(ele->centre(), ele->element_accessor());
-
+        
         for (unsigned int i = 0; i < nsides; i++) {
-            side_row = side_rows[i] = side_row_4_id[ mh_dh.side_dof( ele->side(i) ) ];
+            side_row = side_rows[i] = side_row_4_id[ dof_indices[i] ];
             edge_row = edge_rows[i] = row_4_edge[ele->side(i)->edge_idx()];
             bcd=ele->side(i)->cond();
 
@@ -1522,6 +1532,9 @@ void DarcyFlowMH_Steady::set_mesh_data_for_bddc(LinSys_BDDC * bddc_ls) {
     // by diagonal. It corresponds to the rho-scaling.
     std::vector<double> element_permeability;
 
+    // temporary array of dof indices for different dimensions (max 4 for 3d)
+    unsigned int dof_indices [4];
+    
     // maximal and minimal dimension of elements
     int elDimMax = 1;
     int elDimMin = 3;
@@ -1537,9 +1550,12 @@ void DarcyFlowMH_Steady::set_mesh_data_for_bddc(LinSys_BDDC * bddc_ls) {
         isegn.push_back( e_idx );
         int nne = 0;
 
+        // when parallel, change it to get_loc_dof_indices
+        velocity_dh_->get_dof_indices(el, dof_indices);
+        
         FOR_ELEMENT_SIDES(el,si) {
             // insert local side dof
-            int side_row = side_row_4_id[ mh_dh.side_dof( el->side(si) ) ];
+            int side_row = side_row_4_id[ dof_indices[si] ];
             arma::vec3 coord = el->side(si)->centre();
 
             localDofMap.insert( std::make_pair( side_row, coord ) );
@@ -1684,6 +1700,7 @@ DarcyFlowMH_Steady::~DarcyFlowMH_Steady() {
 	delete output_object;
 
 	VecScatterDestroy(&par_to_all);
+
     
     delete velocity_;
     
@@ -1769,10 +1786,14 @@ void DarcyFlowMH_Steady::make_serial_scatter() {
             // create seq. IS to scatter par solutin to seq. vec. in original order
             // use essentialy row_4_id arrays
             loc_idx = (int *) xmalloc(size * sizeof(int));
+            // temporary array of dof indices for different dimensions (max 4 for 3d)
+            unsigned int dof_indices [4];
             i = 0;
             FOR_ELEMENTS(mesh_, ele) {
+                // when parallel, change it to get_loc_dof_indices
+                velocity_dh_->get_dof_indices(ele, dof_indices);
                 FOR_ELEMENT_SIDES(ele,si) {
-                    loc_idx[i++] = side_row_4_id[ mh_dh.side_dof( ele->side(si) ) ];
+                    loc_idx[i++] = side_row_4_id[ dof_indices[si] ];
                 }
             }
             FOR_ELEMENTS(mesh_, ele) {
@@ -1810,6 +1831,8 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
 
     int e_idx;
 
+    // temporary array of dof indices for different dimensions (max 4 for 3d)
+    unsigned int dof_indices [4];
     
     //ierr = MPI_Barrier(PETSC_COMM_WORLD);
     //ASSERT(ierr == 0, "Error in MPI_Barrier.");
@@ -1862,7 +1885,9 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
                         row_4_el[mesh_->element.index(side->element())]);
             }
             // id array
-            id_4_old[is++] = mh_dh.side_dof( side );
+            // when parallel, change it to get_loc_dof_indices
+            velocity_dh_->get_dof_indices(side->element(), dof_indices);
+            id_4_old[is++] = dof_indices[side->el_idx()];
         }
     }
 
@@ -1894,9 +1919,12 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
 
             global_row_4_sub_row->insert( el_row );
 
+            // when parallel, change it to get_loc_dof_indices
+            velocity_dh_->get_dof_indices(el, dof_indices);
+            
             unsigned int nsides = el->n_sides();
             for (unsigned int i = 0; i < nsides; i++) {
-                side_row = side_row_4_id[ mh_dh.side_dof( el->side(i) ) ];
+                side_row = side_row_4_id[ dof_indices[i] ) ];
 		        edge_row = row_4_edge[el->side(i)->edge_idx()];
 
 		        global_row_4_sub_row->insert( side_row );
@@ -2240,18 +2268,23 @@ void DarcyFlowLMH_Unsteady::postprocess() {
     PetscScalar *loc_prev_sol;
     VecGetArray(previous_solution, &loc_prev_sol);
 
+    // temporary array of dof indices for different dimensions (max 4 for 3d)
+    unsigned int dof_indices [4];
+            
     // modify side fluxes in parallel
     // for every local edge take time term on diagonal and add it to the corresponding flux
     for (unsigned int i_loc = 0; i_loc < edge_ds->lsize(); i_loc++) {
 
         edg = &( mesh_->edges[ edge_4_loc[i_loc] ] );
         loc_edge_row = side_ds->lsize() + el_ds->lsize() + i_loc;
-
+        
         new_pressure = (schur0->get_solution_array())[loc_edge_row];
         old_pressure = loc_prev_sol[loc_edge_row];
         FOR_EDGE_SIDES(edg,i) {
           ele = edg->side(i)->element();
-          side_row = side_row_4_id[ mh_dh.side_dof( edg->side(i) ) ];
+          // when parallel, change it to get_loc_dof_indices
+          velocity_dh_->get_dof_indices(mesh_->element(ele->index()), dof_indices);
+          side_row = side_row_4_id[ dof_indices[i] ];
           time_coef = - ele->measure() *
               data_.cross_section.value(ele->centre(), ele->element_accessor()) *
               data_.storativity.value(ele->centre(), ele->element_accessor()) /
@@ -2272,8 +2305,10 @@ void DarcyFlowLMH_Unsteady::postprocess() {
 
   for (unsigned int i_loc = 0; i_loc < el_ds->lsize(); i_loc++) {
       ele = mesh_->element(el_4_loc[i_loc]);
+      // when parallel, change it to get_loc_dof_indices
+      velocity_dh_->get_dof_indices(mesh_->element(ele->index()), dof_indices);
       FOR_ELEMENT_SIDES(ele,i) {
-          side_rows[i] = side_row_4_id[ mh_dh.side_dof( ele->side(i) ) ];
+          side_rows[i] = side_row_4_id[ dof_indices[i] ];
           values[i] = 1.0 * ele->measure() *
             data_.cross_section.value(ele->centre(), ele->element_accessor()) *
             data_.water_source_density.value(ele->centre(), ele->element_accessor()) /
