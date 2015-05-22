@@ -59,6 +59,7 @@
 #include "fields/field_values.hh"
 #include "fields/field_elementwise.hh" 
 #include "fields/generic_field.hh"
+#include <fields/field_fe.hh>
 
 #include "reaction/isotherm.hh" // SorptionType enum
 
@@ -319,8 +320,9 @@ void ConvectionTransport::set_boundary_conditions()
     START_TIMER ("set_boundary_conditions");
 
     ElementFullIter elm = ELEMENT_FULL_ITER_NULL(mesh_);
-
+    SideIter side;
     unsigned int sbi, loc_el, loc_b = 0;
+    double flux;
     
     // Assembly bcvcorr vector
     for(sbi=0; sbi < n_subst_; sbi++) VecZeroEntries(bcvcorr[sbi]);
@@ -338,7 +340,14 @@ void ConvectionTransport::set_boundary_conditions()
             FOR_ELEMENT_SIDES(elm,si) {
                 Boundary *b = elm->side(si)->cond();
                 if (b != NULL) {
-                    double flux = mh_dh->side_flux( *(elm->side(si)) );
+                    // for constant velocity on side:
+                    // flux over side = velocity * normal * |side|
+                    side = elm->side(si);
+                    flux = arma::dot(
+                                    velocity_->value(side->centre(), elm->element_accessor()),
+                                    side->normal()
+                                  )
+                                  * side->measure();
                     if (flux < 0.0) {
                         double aij = -(flux / (elm->measure() * csection * por_m) );
 
@@ -498,9 +507,8 @@ void ConvectionTransport::update_solution() {
     START_TIMER("data reinit");
     data_.set_time(time_->step()); // set to the last computed time
 
-    ASSERT(mh_dh, "Null MH object.\n" );
+    ASSERT(velocity_, "Velocity has not been passed.\n" );
     // update matrix and sources if neccessary
-
 
     if (mh_dh->time_changed() > transport_matrix_time  || data_.porosity.changed()) {
         create_transport_matrix_mpi();
@@ -612,13 +620,21 @@ void ConvectionTransport::create_transport_matrix_mpi() {
     MPI_Comm_size(PETSC_COMM_WORLD, &np);
 
     double flux, flux2, edg_flux;
+    SideIter side;
 
 
     vector<double> edge_flow(mesh_->n_edges(),0.0);
     for(unsigned int i=0; i < mesh_->n_edges() ; i++) { // calculate edge Qv
         Edge &edg = mesh_->edges[i];
         for( int s=0; s < edg.n_sides; s++) {
-            flux = mh_dh->side_flux( *(edg.side(s)) );
+            side = edg.side(s);
+            // for constant velocity on side:
+            // flux over side = velocity * normal * |side|
+            flux = arma::dot(
+                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            side->normal()
+                          )
+                          * side->measure();
             if ( flux > 0)  edge_flow[i]+= flux;
         }
     }
@@ -644,23 +660,36 @@ void ConvectionTransport::create_transport_matrix_mpi() {
 
         FOR_ELEMENT_SIDES(elm,si) {
             // same dim
-            flux = mh_dh->side_flux( *(elm->side(si)) );
+            side = elm->side(si);
+            // for constant velocity on side:
+            // flux over side = velocity * normal * |side|
+            flux = arma::dot(
+                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            side->normal()
+                          )
+                          * side->measure();
             if (elm->side(si)->cond() == NULL) {
                  edg = elm->side(si)->edge();
                  edg_flux = edge_flow[ elm->side(si)->edge_idx() ];
-                 FOR_EDGE_SIDES(edg,s)
+                 FOR_EDGE_SIDES(edg,s) {
                     // this test should also eliminate sides facing to lower dim. elements in comp. neighboring
                     // These edges on these sides should have just one side
-                    if (edg->side(s) != elm->side(si)) {
+                     side = edg->side(s);
+                    if (side != elm->side(si)) {
                         j = ELEMENT_FULL_ITER(mesh_, edg->side(s)->element()).index();
                         new_j = row_4_el[j];
 
-                        flux2 = mh_dh->side_flux( *(edg->side(s)));
+                        flux2 = arma::dot(
+                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            side->normal()
+                          )
+                          * side->measure();
                         if ( flux2 > 0.0 && flux <0.0)
                             aij = -(flux * flux2 / ( edg_flux * elm->measure() * csection * por_m) );
                         else aij =0;
                         MatSetValue(tm, new_i, new_j, aij, INSERT_VALUES);
                     }
+                 }
                 if (flux > 0.0)
                     aii -= (flux / (elm->measure() * csection * por_m) );
             } else {
@@ -674,7 +703,12 @@ void ConvectionTransport::create_transport_matrix_mpi() {
                 el2 = ELEMENT_FULL_ITER(mesh_, elm->neigh_vb[n]->side()->element() ); // higher dim. el.
                 ASSERT( el2 != elm, "Elm. same\n");
                 new_j = row_4_el[el2.index()];
-                flux = mh_dh->side_flux( *(elm->neigh_vb[n]->side()) );
+                side = elm->neigh_vb[n]->side();
+                flux = arma::dot(
+                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            side->normal()
+                          )
+                          * side->measure();
 
                 // volume source - out-flow from higher dimension
                 if (flux > 0.0)  aij = flux / (elm->measure() * csection * por_m);
