@@ -174,7 +174,7 @@ DarcyFlowMH::EqData::EqData()
 
     ADD_FIELD(cross_section, "Complement dimension parameter (cross section for 1D, thickness for 2D).", "1.0" );
     	cross_section.units( UnitSI().m(3).md() );
-
+        
     ADD_FIELD(conductivity, "Isotropic conductivity scalar.", "1.0" );
     	conductivity.units( UnitSI().m().s(-1) );
 
@@ -214,6 +214,7 @@ DarcyFlowMH::EqData::EqData()
     main_matrix_fields = this->subset({"anisotropy", "conductivity", "cross_section", "sigma", "bc_type", "bc_robin_sigma"});
     rhs_fields = this->subset({"water_source_density", "bc_pressure", "bc_flux"});
 
+    *this += velocity.name("velocity").units( UnitSI().m().s(-1) ).input_default("0.0");
 }
 
 
@@ -282,10 +283,14 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
     map1_ = new MappingP1<1,3>();
     map2_ = new MappingP1<2,3>();
     map3_ = new MappingP1<3,3>();
-    velocity_ = new FieldFE<3, FieldValue<3>::VectorFixed>();
+    velocity_ = make_shared< FieldFE<3, FieldValue<3>::VectorFixed> >();
     velocity_->set_mesh(mesh_,false);
-
     
+//     // set velocity FieldFE after solving the linsys
+//     velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
+
+    // set data velocity from FieldFE
+    data_.velocity.set_field(mesh_->region_db().get_region_set("ALL"), velocity_);
     
     prepare_parallel(in_rec.val<AbstractRecord>("solver"));
 
@@ -355,9 +360,8 @@ void DarcyFlowMH_Steady::postprocess()
 {
     START_TIMER("postprocess");
     
-    // set velocity FieldFE after solving the linsys
+     // set velocity FieldFE after solving the linsys
     velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
-    velocity_->set_time(time_->step());
     
     get_mh_dofhandler();
     
@@ -1700,9 +1704,6 @@ DarcyFlowMH_Steady::~DarcyFlowMH_Steady() {
 	delete output_object;
 
 	VecScatterDestroy(&par_to_all);
-
-    
-    delete velocity_;
     
     delete velocity_dh_;
     delete fe_rt1_;

@@ -63,6 +63,7 @@
 #include "fields/field.hh"
 #include "fields/field_set.hh"
 #include "fields/field_add_potential.hh"
+#include <fields/field_fe.hh>
 #include "flow/old_bcd.hh"
 
 
@@ -79,7 +80,6 @@ class Balance;
 
 class DOFHandlerMultiDim;
 template<unsigned int dim, unsigned int spacedim> class FE_RT0;
-template<int spacedim, class Value> class FieldFE;
 template<unsigned int dim, unsigned int spacedim> class MappingP1;
 template<unsigned int dim, unsigned int spacedim> class FEValues;
 
@@ -137,6 +137,8 @@ public:
         BCField<3, FieldValue<3>::Scalar > bc_flux;
         BCField<3, FieldValue<3>::Scalar > bc_robin_sigma;
         
+        Field<3, FieldValue<3>::VectorFixed> velocity;
+        
         //TODO: these belong to Unsteady flow classes
         //as long as Unsteady is descendant from Steady, these cannot be transfered..
         Field<3, FieldValue<3>::Scalar > init_pressure;
@@ -192,12 +194,6 @@ public:
        return mh_dh;
     }
     
-    /// @brief Returns velocity as a pointer to a FieldFE object.
-    /** At the moment it is sequential and uses petsc scattered sol_vec.
-     */
-    FieldFE<3, FieldValue<3>::VectorFixed> * get_velocity() const
-    {return velocity_;}
-    
     virtual void set_concentration_vector(Vec &vc){};
 
 
@@ -227,7 +223,7 @@ protected:
         MappingP1<1,3> *map1_;              ///< Mapping for velocity FieldFE (1d).
         MappingP1<2,3> *map2_;              ///< Mapping for velocity FieldFE (2d).
         MappingP1<3,3> *map3_;              ///< Mapping for velocity FieldFE (3d).
-        FieldFE<3, FieldValue<3>::VectorFixed> *velocity_;  ///< Velocity FieldFE object (sequential at the moment).
+        shared_ptr<FieldFE<3, FieldValue<3>::VectorFixed> > velocity_;  ///< Velocity FieldFE object (sequential at the moment).
     //@}
     
     MortarMethod mortar_method_;
