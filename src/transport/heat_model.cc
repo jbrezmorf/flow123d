@@ -168,6 +168,11 @@ HeatTransferModel::ModelEqData::ModelEqData()
             .name("cross_section")
             .units( UnitSI().m(3).md() )
             .flags(input_copy & in_time_term & in_main_matrix);
+            
+    *this+=velocity
+            .name("velocity")
+            .units( UnitSI().m().s(-1) )
+            .flags(input_copy & in_time_term & in_main_matrix);
 
     *this+=output_field
             .name("temperature")

@@ -78,6 +78,8 @@ public:
 
 		/// Pointer to DarcyFlow field cross_section
 		Field<3, FieldValue<3>::Scalar > cross_section;
+        /// Pointer to DarcyFlow field velocity.
+        Field<3, FieldValue<3>::VectorFixed > velocity;
 
 
 		MultiField<3, FieldValue<3>::Scalar> output_field;
