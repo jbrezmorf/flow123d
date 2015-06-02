@@ -344,7 +344,7 @@ void ConvectionTransport::set_boundary_conditions()
                     // flux over side = velocity * normal * |side|
                     side = elm->side(si);
                     flux = arma::dot(
-                                    velocity_->value(side->centre(), elm->element_accessor()),
+                                    data_.velocity.value(side->centre(), elm->element_accessor()),
                                     side->normal()
                                   )
                                   * side->measure();
@@ -507,7 +507,6 @@ void ConvectionTransport::update_solution() {
     START_TIMER("data reinit");
     data_.set_time(time_->step()); // set to the last computed time
 
-    ASSERT(velocity_, "Velocity has not been passed.\n" );
     // update matrix and sources if neccessary
 
     if (mh_dh->time_changed() > transport_matrix_time  || data_.porosity.changed()) {
@@ -631,7 +630,7 @@ void ConvectionTransport::create_transport_matrix_mpi() {
             // for constant velocity on side:
             // flux over side = velocity * normal * |side|
             flux = arma::dot(
-                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            data_.velocity.value(side->centre(), side->element()->element_accessor()),
                             side->normal()
                           )
                           * side->measure();
@@ -664,7 +663,7 @@ void ConvectionTransport::create_transport_matrix_mpi() {
             // for constant velocity on side:
             // flux over side = velocity * normal * |side|
             flux = arma::dot(
-                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            data_.velocity.value(side->centre(), side->element()->element_accessor()),
                             side->normal()
                           )
                           * side->measure();
@@ -680,7 +679,7 @@ void ConvectionTransport::create_transport_matrix_mpi() {
                         new_j = row_4_el[j];
 
                         flux2 = arma::dot(
-                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            data_.velocity.value(side->centre(), side->element()->element_accessor()),
                             side->normal()
                           )
                           * side->measure();
@@ -705,7 +704,7 @@ void ConvectionTransport::create_transport_matrix_mpi() {
                 new_j = row_4_el[el2.index()];
                 side = elm->neigh_vb[n]->side();
                 flux = arma::dot(
-                            velocity_->value(side->centre(), side->element()->element_accessor()),
+                            data_.velocity.value(side->centre(), side->element()->element_accessor()),
                             side->normal()
                           )
                           * side->measure();

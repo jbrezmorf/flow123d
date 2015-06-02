@@ -786,7 +786,7 @@ void TransportDG<Model>::assemble_volume_integrals()
         ElementAccessor<3> ele_acc = cell->element_accessor();
         feo->dh()->get_dof_indices(cell, dof_indices);
         
-        velocity_->value_list(fe_values.point_list(), cell->element_accessor(), velocity);
+        data_.velocity.value_list(fe_values.point_list(), cell->element_accessor(), velocity);
 
         Model::compute_advection_diffusion_coefficients(fe_values.point_list(), velocity, ele_acc, ad_coef, dif_coef);
         Model::compute_sources_sigma(fe_values.point_list(), ele_acc, sources_sigma);
@@ -927,7 +927,7 @@ void TransportDG<Model>::assemble_fluxes_element_element()
 			feo->dh()->get_dof_indices(cell, side_dof_indices[sid]);
 			fe_values[sid]->reinit(cell, edg->side(sid)->el_idx());
             
-            velocity_->value_list(fe_values[sid]->point_list(), cell->element_accessor(), side_velocity[sid]);
+            data_.velocity.value_list(fe_values[sid]->point_list(), cell->element_accessor(), side_velocity[sid]);
             
 			Model::compute_advection_diffusion_coefficients(fe_values[sid]->point_list(), side_velocity[sid], ele_acc, ad_coef_edg[sid], dif_coef_edg[sid]);
 			dg_penalty[sid] = data_.dg_penalty.value(cell->centre(), ele_acc);
@@ -1054,7 +1054,7 @@ void TransportDG<Model>::assemble_fluxes_boundary()
         feo->dh()->get_dof_indices(cell, side_dof_indices);
         fe_values_side.reinit(cell, side->el_idx());
 
-        velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), side_velocity);
+        data_.velocity.value_list(fe_values_side.point_list(), cell->element_accessor(), side_velocity);
         Model::compute_advection_diffusion_coefficients(fe_values_side.point_list(), side_velocity, ele_acc, ad_coef, dif_coef);
         dg_penalty = data_.dg_penalty.value(cell->centre(), ele_acc);
         arma::uvec bc_type = data_.bc_type.value(side->cond()->element()->centre(), side->cond()->element_accessor());
@@ -1162,8 +1162,8 @@ void TransportDG<Model>::assemble_fluxes_element_side()
 		element_id[0] = cell_sub.index();
 		element_id[1] = cell.index();
 		
-        velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), velocity_higher);
-        velocity_->value_list(fe_values_vb.point_list(), cell->element_accessor(), velocity_lower);
+        data_.velocity.value_list(fe_values_side.point_list(), cell->element_accessor(), velocity_higher);
+        data_.velocity.value_list(fe_values_vb.point_list(), cell->element_accessor(), velocity_lower);
 		Model::compute_advection_diffusion_coefficients(fe_values_vb.point_list(), velocity_lower, cell_sub->element_accessor(), ad_coef_edg[0], dif_coef_edg[0]);
 		Model::compute_advection_diffusion_coefficients(fe_values_vb.point_list(), velocity_higher, cell->element_accessor(), ad_coef_edg[1], dif_coef_edg[1]);
 		Model::compute_mass_matrix_coefficient(fe_values_vb.point_list(), cell_sub->element_accessor(), mm_coef_lower);
@@ -1281,7 +1281,7 @@ void TransportDG<Model>::set_boundary_conditions()
 			arma::uvec bc_type = data_.bc_type.value(side->cond()->element()->centre(), ele_acc);
 
 			fe_values_side.reinit(cell, side->el_idx());
-            velocity_->value_list(fe_values_side.point_list(), cell->element_accessor(), velocity);
+            data_.velocity.value_list(fe_values_side.point_list(), cell->element_accessor(), velocity);
 
 			Model::compute_advection_diffusion_coefficients(fe_values_side.point_list(), velocity, side->element()->element_accessor(), ad_coef, dif_coef);
 			Model::compute_dirichlet_bc(fe_values_side.point_list(), ele_acc, bc_values);
@@ -1649,7 +1649,7 @@ void TransportDG<Model>::calc_fluxes(vector<vector<double> > &bcd_balance, vecto
 		fe_values.reinit(cell, side->el_idx());
 
 		feo->dh()->get_dof_indices(cell, dof_indices);
-        velocity_->value_list(fe_values.point_list(), cell->element_accessor(), side_velocity);
+        data_.velocity.value_list(fe_values.point_list(), cell->element_accessor(), side_velocity);
         
 		Model::compute_advection_diffusion_coefficients(fe_values.point_list(), side_velocity, ele_acc, ad_coef, dif_coef);
 		Model::compute_dirichlet_bc(fe_values.point_list(), side->cond()->element_accessor(), bc_values);

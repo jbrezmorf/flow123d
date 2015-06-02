@@ -114,6 +114,8 @@ HC_ExplicitSequential::HC_ExplicitSequential(Input::Record in_record)
         // setup fields
         transport_reaction->data()["cross_section"]
         		.copy_from(water->data()["cross_section"]);
+        transport_reaction->data()["velocity"]
+                .copy_from(water->data()["velocity"]);
 
     } else {
         transport_reaction = std::make_shared<TransportNothing>(*mesh);
@@ -201,7 +203,6 @@ void HC_ExplicitSequential::run_simulation()
             if (velocity_changed) {
                 //DBGMSG("velocity update\n");
                 transport_reaction->set_velocity_field( water->get_mh_dofhandler() );
-                transport_reaction->set_velocity_field( water->get_velocity() );
                 velocity_changed = false;
             }
             if (transport_reaction->time().tlevel() == 0) transport_reaction->zero_time_step();

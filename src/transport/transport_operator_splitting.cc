@@ -103,6 +103,9 @@ TransportBase::TransportEqData::TransportEqData()
 	ADD_FIELD(cross_section, "");
 	cross_section.flags( FieldFlag::input_copy ).flags_add(in_time_term & in_main_matrix & in_rhs);
 
+    ADD_FIELD(velocity, "");
+    velocity.flags( FieldFlag::input_copy ).flags_add(in_time_term & in_main_matrix & in_rhs);
+    
 	ADD_FIELD(sources_density, "Density of concentration sources.", "0");
 	sources_density.units( UnitSI().kg().m(-3).s(-1) )
 			.flags_add(in_rhs);
@@ -321,12 +324,6 @@ void TransportOperatorSplitting::set_velocity_field(const MH_DofHandler &dh)
     mh_dh = &dh;
 	convection->set_velocity_field( dh );
 };
-
-void TransportOperatorSplitting::set_velocity_field(FieldFE< 3, FieldValue_< 3, 1, double > >* vel)
-{
-    velocity_ = vel;
-    convection->set_velocity_field( vel );
-}
 
 
 
