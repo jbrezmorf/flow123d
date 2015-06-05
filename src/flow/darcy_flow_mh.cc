@@ -174,7 +174,7 @@ DarcyFlowMH::EqData::EqData()
 
     ADD_FIELD(cross_section, "Complement dimension parameter (cross section for 1D, thickness for 2D).", "1.0" );
     	cross_section.units( UnitSI().m(3).md() );
-        
+
     ADD_FIELD(conductivity, "Isotropic conductivity scalar.", "1.0" );
     	conductivity.units( UnitSI().m().s(-1) );
 
@@ -346,10 +346,13 @@ void DarcyFlowMH_Steady::update_solution() {
 
     xprintf(MsgLog, "Linear solver ended with reason: %d \n", convergedReason );
     ASSERT( convergedReason >= 0, "Linear solver failed to converge. Convergence reason %d \n", convergedReason );
-
+    
     this -> postprocess();
 
     solution_changed_for_scatter=true;
+    
+    // set velocity FieldFE after solving the linsys
+    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
 
     output_data();
 
@@ -359,11 +362,6 @@ void DarcyFlowMH_Steady::update_solution() {
 void DarcyFlowMH_Steady::postprocess() 
 {
     START_TIMER("postprocess");
-    
-     // set velocity FieldFE after solving the linsys
-    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
-    
-    get_mh_dofhandler();
     
 //     int rank;
 //     MPI_Comm_rank(PETSC_COMM_WORLD,&rank);
@@ -687,8 +685,8 @@ void DarcyFlowMH_Steady::assembly_steady_mh_matrix()
     if (balance_ != nullptr)
         balance_->start_flux_assembly(water_balance_idx_);
 
+    arma::mat local_matrix;
     for (unsigned int i_loc = 0; i_loc < el_ds->lsize(); i_loc++) {
-        arma::mat local_matrix;
         ele = mesh_->element(el_4_loc[i_loc]);
         
         el_row = row_4_el[el_4_loc[i_loc]];
@@ -2263,6 +2261,7 @@ void DarcyFlowLMH_Unsteady::assembly_source_term()
 void DarcyFlowLMH_Unsteady::postprocess() {
     int side_row, loc_edge_row, i;
     Edge* edg;
+    SideIter side;
     ElementIter ele;
     double new_pressure, old_pressure, time_coef;
 
@@ -2282,10 +2281,11 @@ void DarcyFlowLMH_Unsteady::postprocess() {
         new_pressure = (schur0->get_solution_array())[loc_edge_row];
         old_pressure = loc_prev_sol[loc_edge_row];
         FOR_EDGE_SIDES(edg,i) {
-          ele = edg->side(i)->element();
+          side = edg->side(i);
+          ele = side->element();
           // when parallel, change it to get_loc_dof_indices
           velocity_dh_->get_dof_indices(mesh_->element(ele->index()), dof_indices);
-          side_row = side_row_4_id[ dof_indices[i] ];
+          side_row = side_row_4_id[ dof_indices[side->el_idx()] ];
           time_coef = - ele->measure() *
               data_.cross_section.value(ele->centre(), ele->element_accessor()) *
               data_.storativity.value(ele->centre(), ele->element_accessor()) /
