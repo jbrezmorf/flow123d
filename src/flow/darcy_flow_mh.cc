@@ -214,7 +214,7 @@ DarcyFlowMH::EqData::EqData()
     main_matrix_fields = this->subset({"anisotropy", "conductivity", "cross_section", "sigma", "bc_type", "bc_robin_sigma"});
     rhs_fields = this->subset({"water_source_density", "bc_pressure", "bc_flux"});
 
-    *this += velocity.name("velocity").units( UnitSI().m().s(-1) ).input_default("0.0");
+    *this += velocity.name("velocity").units( UnitSI().m().s(-1) ).flags(FieldFlag::equation_result);
 }
 
 
@@ -272,8 +272,6 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
 
     mh_dh.reinit(mesh_);
     
-    
-     
     fe_rt1_ = new FE_RT0<1,3>();
     fe_rt2_ = new FE_RT0<2,3>();
     fe_rt3_ = new FE_RT0<3,3>();
@@ -285,9 +283,6 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
     map3_ = new MappingP1<3,3>();
     velocity_ = make_shared< FieldFE<3, FieldValue<3>::VectorFixed> >();
     velocity_->set_mesh(mesh_,false);
-    
-//     // set velocity FieldFE after solving the linsys
-//     velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
 
     // set data velocity from FieldFE
     data_.velocity.set_field(mesh_->region_db().get_region_set("ALL"), velocity_);
@@ -321,9 +316,6 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
     	create_linear_system();
     	output_object = new DarcyFlowMHOutput(this, in_rec.val<Input::Record>("output"));
     }
-
-
-
 }
 
 
@@ -2003,7 +1995,8 @@ DarcyFlowMH_Unsteady::DarcyFlowMH_Unsteady(Mesh &mesh_in, const Input::Record in
 
     assembly_linear_system();
 	read_init_condition();
-
+// set velocity FieldFE after solving the linsys
+    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
     output_data();
 }
 
@@ -2118,6 +2111,8 @@ DarcyFlowLMH_Unsteady::DarcyFlowLMH_Unsteady(Mesh &mesh_in, const  Input::Record
 
     assembly_linear_system();
 	read_init_condition();
+    // set velocity FieldFE after solving the linsys
+    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
     output_data();
 }
 

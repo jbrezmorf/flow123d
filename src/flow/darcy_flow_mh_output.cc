@@ -137,7 +137,7 @@ DarcyFlowMHOutput::DarcyFlowMHOutput(DarcyFlowMH_Steady *flow, Input::Record in_
 
 	ele_flux.resize(3*mesh_->n_elements());
 	auto ele_flux_ptr=ele_flux.create_field<3, FieldValue<3>::VectorFixed>(3);
-	output_fields.field_ele_flux.set_field(mesh_->region_db().get_region_set("ALL"), ele_flux_ptr);
+    output_fields.field_ele_flux.set_field(mesh_->region_db().get_region_set("ALL"), ele_flux_ptr);
 
 	output_fields.subdomain = GenericField<3>::subdomain(*mesh_);
 	output_fields.region_id = GenericField<3>::region_id(*mesh_);
@@ -242,52 +242,11 @@ void DarcyFlowMHOutput::make_element_scalar() {
  *
  */
 void DarcyFlowMHOutput::make_element_vector() {
-    const MH_DofHandler &mhdh = darcy_flow->get_mh_dofhandler();
-
-    // All templates are dimension dependent here.
-    // Prepare guadratures - 1 point at the barycenter.
-    const unsigned int q_order = 0;
-    QGauss<1> q1(q_order);
-    QGauss<2> q2(q_order);
-    QGauss<3> q3(q_order);
-    // Prepare FEValues for computing velocity at the barycenter.
-    FEValues<1,3> fv_rt1(*(darcy_flow->map1_),q1, *(darcy_flow->fe_rt1_), update_values | update_quadrature_points);
-    FEValues<2,3> fv_rt2(*(darcy_flow->map2_),q2, *(darcy_flow->fe_rt2_), update_values | update_quadrature_points);
-    FEValues<3,3> fv_rt3(*(darcy_flow->map3_),q3, *(darcy_flow->fe_rt3_), update_values | update_quadrature_points);
-    
     unsigned int i=0;
     FOR_ELEMENTS(mesh_, ele) {
-        unsigned int dim = ele->dim();
-        
         arma::vec3 flux_in_center;
-        flux_in_center.zeros();
-        
-        switch(dim)
-        {
-            case 1: 
-                fv_rt1.reinit(ele);
-                for (unsigned int li = 0; li < ele->n_sides(); li++) {
-                    flux_in_center += mhdh.side_flux( *(ele->side( li ) ) )
-                              * fv_rt1.shape_vector(li,0); //fe_values.RT0_value( ele, ele->centre(), li )
-                }
-                break;
-            case 2: 
-                fv_rt2.reinit(ele);
-                for (unsigned int li = 0; li < ele->n_sides(); li++) {
-                    flux_in_center += mhdh.side_flux( *(ele->side( li ) ) )
-                              * fv_rt2.shape_vector(li,0); //fe_values.RT0_value( ele, ele->centre(), li )
-                }
-                break;
-            case 3: 
-                fv_rt3.reinit(ele);
-                for (unsigned int li = 0; li < ele->n_sides(); li++) {
-                    flux_in_center += mhdh.side_flux( *(ele->side( li ) ) )
-                              * fv_rt3.shape_vector(li,0); //fe_values.RT0_value( ele, ele->centre(), li )
-                }
-                break;
-        }
-        
-        flux_in_center /= darcy_flow->data_.cross_section.value(ele->centre(), ele->element_accessor() );
+        flux_in_center = darcy_flow->data_.velocity.value(ele->centre(), ele->element_accessor())
+                        / darcy_flow->data_.cross_section.value(ele->centre(), ele->element_accessor() );
         
         // place it in the sequential vector
         for(unsigned int j=0; j<3; j++) 
