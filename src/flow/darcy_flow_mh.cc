@@ -1921,7 +1921,7 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
 #ifdef FLOW123D_HAVE_BDDCML
     if (in_rec.type() ==  LinSys_BDDC::input_type) {
         // auxiliary
-        Element *el;
+        ElementFullIter el;
         int side_row, edge_row;
 
         global_row_4_sub_row = boost::make_shared<LocalToGlobalMap>(rows_ds);
@@ -1937,7 +1937,7 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
             global_row_4_sub_row->insert( el_row );
 
             // when parallel, change it to get_loc_dof_indices
-            velocity_dh_->get_dof_indices(*el, dof_indices);
+            velocity_dh_->get_dof_indices(el, dof_indices);
             
             unsigned int nsides = el->n_sides();
             for (unsigned int i = 0; i < nsides; i++) {
