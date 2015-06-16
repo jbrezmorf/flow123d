@@ -1937,11 +1937,11 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
             global_row_4_sub_row->insert( el_row );
 
             // when parallel, change it to get_loc_dof_indices
-            velocity_dh_->get_dof_indices(el, dof_indices);
+            velocity_dh_->get_dof_indices(*el, dof_indices);
             
             unsigned int nsides = el->n_sides();
             for (unsigned int i = 0; i < nsides; i++) {
-                side_row = side_row_4_id[ dof_indices[i] ) ];
+                side_row = side_row_4_id[ dof_indices[i] ];
 		        edge_row = row_4_edge[el->side(i)->edge_idx()];
 
 		        global_row_4_sub_row->insert( side_row );
