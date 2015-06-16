@@ -1141,6 +1141,32 @@ void DarcyFlowMH_Steady::assembly_source_term()
 }
 
 
+double DarcyFlowMH_Steady::side_flux(const Side& side) const
+{
+//     return mh_solution[ elem_side_to_global[ side.element().index() ][ side.el_idx() ] ];
+    unsigned int dof_indices [4];
+    velocity_dh_->get_loc_dof_indices(side.element(),dof_indices);
+    return solution[ side_row_4_id[dof_indices[side.el_idx()]] ];
+}
+
+
+double DarcyFlowMH_Steady::side_scalar(const Side& side) const
+{
+    unsigned int i_edg = side.edge_idx();
+//     return mh_solution[ side.mesh()->n_sides() + side.mesh()->n_elements() + i_edg ];
+    return solution[side.mesh()->n_sides() + side.mesh()->n_elements() + i_edg];
+}
+
+
+double DarcyFlowMH_Steady::element_scalar(ElementFullIter& ele) const
+{
+//     return mh_solution[ ele->mesh_->n_sides() + ele.index() ];
+    return solution[ ele->mesh_->n_sides() + ele.index() ];
+}
+
+
+
+
 void P0_CouplingAssembler::pressure_diff(int i_ele,
 		vector<int> &dofs, unsigned int &ele_type, double &delta, arma::vec &dirichlet) {
 

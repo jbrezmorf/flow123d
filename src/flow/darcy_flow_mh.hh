@@ -76,6 +76,7 @@ class Distribution;
 class SparseGraph;
 class LocalToGlobalMap;
 class DarcyFlowMHOutput;
+struct DiffData;
 class Balance;
 
 class DOFHandlerMultiDim;
@@ -341,6 +342,16 @@ protected:
     void set_mesh_data_for_bddc(LinSys_BDDC * bddc_ls);
     double solution_precision() const;
 
+    
+    /// Temporary replacement for DofHandler accessor, flux through given side. Usage only in output.
+    double side_flux(const Side &side) const;
+
+    /// Temporary replacement for DofHandler accessor, scalar (pressure) on edge of the side. Usage only in output.
+    double side_scalar(const Side &side) const;
+
+    /// Temporary replacement for DofHandler accessor, scalar (pressure) on element. Usage only in output.
+    double element_scalar( ElementFullIter &ele ) const;
+    
 
     DarcyFlowMHOutput *output_object;
 
@@ -374,6 +385,7 @@ protected:
   EqData data_;
 
   friend class DarcyFlowMHOutput;
+  friend struct DiffData;   // For DarcyFlowOutput error computations.
   friend class P0_CouplingAssembler;
   friend class P1_CouplingAssembler;
 

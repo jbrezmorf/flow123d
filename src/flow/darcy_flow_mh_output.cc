@@ -310,9 +310,6 @@ void DarcyFlowMHOutput::make_node_scalar_param() {
     bool count_elements = true; //!< scalar is counted via elements*/
     bool count_sides = true; //!< scalar is counted via sides */
 
-
-    const MH_DofHandler &dh = darcy_flow->get_mh_dofhandler();
-
     /** init arrays */
     for (int i = 0; i < n_nodes; i++){
         sum_elements[i] = 0;
@@ -387,7 +384,7 @@ void DarcyFlowMHOutput::make_node_scalar_param() {
                 );
 
 
-                scalars[node_index] += dh.side_scalar( *side ) *
+                scalars[node_index] += darcy_flow->side_scalar( *side ) *
                         (1 - dist / (sum_ele_dist[node_index] + sum_side_dist[node_index])) /
                         (sum_sides[node_index] + sum_elements[node_index] - 1);
             }
@@ -409,7 +406,6 @@ void DarcyFlowMHOutput::make_node_scalar_param() {
 //=============================================================================
 
 void DarcyFlowMHOutput::water_balance() {
-    const MH_DofHandler &dh = darcy_flow->get_mh_dofhandler();
     if (balance_output_file == NULL) return;
 
     //BOUNDARY
@@ -442,7 +438,7 @@ void DarcyFlowMHOutput::water_balance() {
     //computing water balance over boundaries
     FOR_BOUNDARIES(mesh_, bcd) {
         // !! there can be more sides per one boundary
-        double flux = dh.side_flux( *(bcd->side()) );
+        double flux = darcy_flow->side_flux( *(bcd->side()) );
 
         Region r = bcd->region();
         if (! r.is_valid()) xprintf(Msg, "Invalid region, ele % d, edg: % d\n", bcd->bc_ele_idx_, bcd->edge_idx_);
@@ -508,8 +504,6 @@ void DarcyFlowMHOutput::water_balance() {
  */
 void DarcyFlowMHOutput::output_internal_flow_data()
 {
-    const MH_DofHandler &dh = darcy_flow->get_mh_dofhandler();
-
     if (raw_output_file == NULL) return;
     
     char dbl_fmt[ 16 ]= "%.8g ";
@@ -529,9 +523,9 @@ void DarcyFlowMHOutput::output_internal_flow_data()
 
         xfprintf( raw_output_file, " %d ", ele->n_sides());
         for (i = 0; i < ele->n_sides(); i++)
-            xfprintf( raw_output_file, dbl_fmt, dh.side_scalar( *(ele->side(i) ) ) );
+            xfprintf( raw_output_file, dbl_fmt, darcy_flow->side_scalar( *(ele->side(i) ) ) );
         for (i = 0; i < ele->n_sides(); i++)
-            xfprintf( raw_output_file, dbl_fmt, dh.side_flux( *(ele->side(i) ) ) );
+            xfprintf( raw_output_file, dbl_fmt, darcy_flow->side_flux( *(ele->side(i) ) ) );
 
         xfprintf( raw_output_file, "\n" );
         cit ++;
@@ -563,26 +557,26 @@ struct DiffData {
     VectorSeqDouble velocity_diff;
     VectorSeqDouble div_diff;
 
-
-    double * solution;
-    const MH_DofHandler * dh;
-
-    //std::vector< std::vector<double>  > *ele_flux;
     std::vector<int> velocity_mask;
     DarcyFlowMH_Steady *darcy;
     DarcyFlowMH_Steady::EqData *data_;
+    
+    template <int dim>
+    void l2_diff_local(ElementFullIter &ele, 
+                       FEValues<dim,3> &fe_values, FEValues<dim,3> &fv_rt, 
+                       ExactSolution &anal_sol);
 };
 
 template <int dim>
-void l2_diff_local(ElementFullIter &ele, 
+void DiffData::l2_diff_local(ElementFullIter &ele, 
                    FEValues<dim,3> &fe_values, FEValues<dim,3> &fv_rt, 
-                   ExactSolution &anal_sol,  DiffData &result) {
+                   ExactSolution &anal_sol) {
 
     fv_rt.reinit(ele);
     fe_values.reinit(ele);
     
-    double conductivity = result.data_->conductivity.value(ele->centre(), ele->element_accessor() );
-    double cross = result.data_->cross_section.value(ele->centre(), ele->element_accessor() );
+    double conductivity = data_->conductivity.value(ele->centre(), ele->element_accessor() );
+    double cross = data_->cross_section.value(ele->centre(), ele->element_accessor() );
 
 
     // get coefficients on the current element
@@ -590,16 +584,16 @@ void l2_diff_local(ElementFullIter &ele,
     vector<double> pressure_traces(dim+1);
 
     for (unsigned int li = 0; li < ele->n_sides(); li++) {
-        fluxes[li] = result.dh->side_flux( *(ele->side( li ) ) );
-        pressure_traces[li] = result.dh->side_scalar( *(ele->side( li ) ) );
+        fluxes[li] = darcy->side_flux( *(ele->side( li ) ) );
+        pressure_traces[li] = darcy->side_scalar( *(ele->side( li ) ) );
     }
-    double pressure_mean = result.dh->element_scalar(ele);
+    double pressure_mean = darcy->element_scalar(ele);
 
     arma::vec analytical(5);
     arma::vec3 flux_in_q_point;
     arma::vec3 anal_flux;
 
-    double velocity_diff=0, divergence_diff=0, pressure_diff=0, diff;
+    double vel_diff=0, divergence_diff=0, press_diff=0, diff;
 
     // 1d:  mean_x_squared = 1/6 (v0^2 + v1^2 + v0*v1)
     // 2d:  mean_x_squared = 1/12 (v0^2 + v1^2 +v2^2 + v0*v1 + v0*v2 + v1*v2)
@@ -633,7 +627,7 @@ void l2_diff_local(ElementFullIter &ele,
 
         diff = - (1.0 / conductivity) * diff / dim / ele->measure() / cross + pressure_mean ;
         diff = ( diff - analytical[0]);
-        pressure_diff += diff * diff * fe_values.JxW(i_point);
+        press_diff += diff * diff * fe_values.JxW(i_point);
 
 
         // velocity difference
@@ -645,7 +639,7 @@ void l2_diff_local(ElementFullIter &ele,
         }
 
         flux_in_q_point -= anal_flux;
-        velocity_diff += dot(flux_in_q_point, flux_in_q_point) * fe_values.JxW(i_point);
+        vel_diff += dot(flux_in_q_point, flux_in_q_point) * fe_values.JxW(i_point);
 
         // divergence diff
         diff = 0;
@@ -656,17 +650,17 @@ void l2_diff_local(ElementFullIter &ele,
     }
 
 
-    result.velocity_diff[ele.index()] = velocity_diff;
-    result.velocity_error[dim-1] += velocity_diff;
+    velocity_diff[ele.index()] = vel_diff;
+    velocity_error[dim-1] += vel_diff;
     if (dim == 2) {
-    	result.mask_vel_error += (result.velocity_mask[ ele.index() ])? 0 : velocity_diff;
+    	mask_vel_error += (velocity_mask[ ele.index() ])? 0 : vel_diff;
     }
 
-    result.pressure_diff[ele.index()] = pressure_diff;
-    result.pressure_error[dim-1] += pressure_diff;
+    pressure_diff[ele.index()] = press_diff;
+    pressure_error[dim-1] += press_diff;
 
-    result.div_diff[ele.index()] = divergence_diff;
-    result.div_error[dim-1] += divergence_diff;
+    div_diff[ele.index()] = divergence_diff;
+    div_error[dim-1] += divergence_diff;
 
 }
 
@@ -740,10 +734,6 @@ void DarcyFlowMHOutput::compute_l2_difference() {
 
     output_fields.fields_for_output += output_fields;
 
-    unsigned int solution_size;
-    darcy_flow->get_solution_vector(result.solution, solution_size);
-
-    result.dh = &( darcy_flow->get_mh_dofhandler());
     result.darcy = darcy_flow;
     result.data_ = &(darcy_flow->data_);
 
@@ -752,10 +742,10 @@ void DarcyFlowMHOutput::compute_l2_difference() {
     	switch (ele->dim()) {
         case 1:
 
-            l2_diff_local<1>( ele, fe_values_1d, fv_rt1d, anal_sol_1d, result);
+            result.l2_diff_local<1>( ele, fe_values_1d, fv_rt1d, anal_sol_1d);
             break;
         case 2:
-            l2_diff_local<2>( ele, fe_values_2d, fv_rt2d, anal_sol_2d, result);
+            result.l2_diff_local<2>( ele, fe_values_2d, fv_rt2d, anal_sol_2d);
             break;
         }
     }
