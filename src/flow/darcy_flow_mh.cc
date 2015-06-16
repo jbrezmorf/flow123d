@@ -1921,7 +1921,6 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
 #ifdef FLOW123D_HAVE_BDDCML
     if (in_rec.type() ==  LinSys_BDDC::input_type) {
         // auxiliary
-        ElementFullIter el;
         int side_row, edge_row;
 
         global_row_4_sub_row = boost::make_shared<LocalToGlobalMap>(rows_ds);
@@ -1931,7 +1930,7 @@ void DarcyFlowMH_Steady::prepare_parallel( const Input::AbstractRecord in_rec) {
         // for each subdomain:
         // | velocities (at sides) | pressures (at elements) | L. mult. (at edges) |
         for (unsigned int i_loc = 0; i_loc < el_ds->lsize(); i_loc++) {
-            el = mesh_->element(el_4_loc[i_loc]);
+            ElementFullIter el = mesh_->element(el_4_loc[i_loc]);
             int el_row = row_4_el[el_4_loc[i_loc]];
 
             global_row_4_sub_row->insert( el_row );
