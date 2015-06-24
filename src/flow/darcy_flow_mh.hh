@@ -151,9 +151,6 @@ public:
          */
         arma::vec4 gravity_;
 
-        FieldSet	time_term_fields;
-        FieldSet	main_matrix_fields;
-        FieldSet	rhs_fields;
     };
 
 

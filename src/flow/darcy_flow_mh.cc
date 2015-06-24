@@ -169,50 +169,86 @@ const int DarcyFlowLMH_Unsteady::registrar =
 
 DarcyFlowMH::EqData::EqData()
 {
-    ADD_FIELD(anisotropy, "Anisotropy of the conductivity tensor.", "1.0" );
-    	anisotropy.units( UnitSI::dimensionless() );
+    *this += anisotropy
+        .name("anisotropy")
+        .description("Anisotropy of the conductivity tensor.")
+        .units( UnitSI::dimensionless() )
+        .input_default("1.0")
+        .flags_add(FieldFlag::in_main_matrix);
 
-    ADD_FIELD(cross_section, "Complement dimension parameter (cross section for 1D, thickness for 2D).", "1.0" );
-    	cross_section.units( UnitSI().m(3).md() );
+    *this += cross_section
+        .name("cross_section")
+        .description("Complement dimension parameter (cross section for 1D, thickness for 2D).")
+        .units( UnitSI().m(3).md() )
+        .input_default("1.0")
+        .flags_add(FieldFlag::in_main_matrix);
 
-    ADD_FIELD(conductivity, "Isotropic conductivity scalar.", "1.0" );
-    	conductivity.units( UnitSI().m().s(-1) );
+    *this += conductivity
+        .name("conductivity")
+        .description("Isotropic conductivity scalar.")
+        .units( UnitSI().m().s(-1) )
+        .input_default("1.0")
+        .flags_add(FieldFlag::in_main_matrix);
 
-    ADD_FIELD(sigma, "Transition coefficient between dimensions.", "1.0");
-    	sigma.units( UnitSI::dimensionless() );
+    *this += sigma
+        .name("sigma")
+        .description("Transition coefficient between dimensions.")
+        .units( UnitSI::dimensionless() )
+        .input_default("1.0")
+        .flags_add(FieldFlag::in_main_matrix);
 
-    ADD_FIELD(water_source_density, "Water source density.", "0.0");
-    	water_source_density.units( UnitSI().s(-1) );
+    *this += water_source_density
+        .name("water_source_density")
+        .description("Water source density.")
+        .units( UnitSI().s(-1) )
+        .input_default("0.0")
+        .flags_add(FieldFlag::in_rhs);
     
-    ADD_FIELD(bc_type,"Boundary condition type, possible values:", "\"none\"" );
-        bc_type.input_selection(&bc_type_selection);
-        bc_type.add_factory( OldBcdInput::instance()->flow_type_factory );
-        bc_type.units( UnitSI::dimensionless() );
+    *this += bc_type
+        .name("bc_type")
+        .description("Boundary condition type, possible values:")
+        .input_selection(&bc_type_selection)
+        .units( UnitSI::dimensionless() )
+        .input_default("\"none\"")
+        .flags_add(FieldFlag::in_main_matrix);
+    bc_type.add_factory( OldBcdInput::instance()->flow_type_factory );
 
-    ADD_FIELD(bc_pressure,"Dirichlet BC condition value for pressure.");
-    	bc_pressure.disable_where(bc_type, {none, neumann} );
-        bc_pressure.units( UnitSI().m() );
+    *this += bc_pressure
+        .disable_where(bc_type, {none, neumann} )
+        .name("bc_pressure")
+        .description("Dirichlet BC condition value for pressure.")
+        .units( UnitSI().m() )
+        .flags_add(FieldFlag::in_rhs);
 
-    ADD_FIELD(bc_flux,"Flux in Neumman or Robin boundary condition.");
-    	bc_flux.disable_where(bc_type, {none, dirichlet, robin} );
-    	bc_flux.add_factory( OldBcdInput::instance()->flow_flux_factory );
-        bc_flux.units( UnitSI().m(4).s(-1).md() );
+    *this += bc_flux
+        .disable_where(bc_type, {none, dirichlet, robin} )
+        .name("bc_flux")
+        .description("Flux in Neumman or Robin boundary condition.")
+        .units( UnitSI().m(4).s(-1).md() )
+        .flags_add(FieldFlag::in_rhs);
+    bc_flux.add_factory( OldBcdInput::instance()->flow_flux_factory );
 
-    ADD_FIELD(bc_robin_sigma,"Conductivity coefficient in Robin boundary condition.");
-    	bc_robin_sigma.disable_where(bc_type, {none, dirichlet, neumann} );
-    	bc_robin_sigma.add_factory( OldBcdInput::instance()->flow_sigma_factory );
-        bc_robin_sigma.units( UnitSI().m(3).s(-1).md() );
+    *this += bc_robin_sigma
+        .disable_where(bc_type, {none, dirichlet, neumann} )
+        .name("bc_robin_sigma")
+        .description("Conductivity coefficient in Robin boundary condition.")
+        .units( UnitSI().m(3).s(-1).md() )
+        .flags_add(FieldFlag::in_main_matrix);
+    bc_robin_sigma.add_factory( OldBcdInput::instance()->flow_sigma_factory );
 
     //these are for unsteady
-    ADD_FIELD(init_pressure, "Initial condition as pressure", "0.0" );
-    	init_pressure.units( UnitSI().m() );
+    *this += init_pressure
+        .name("init_pressure")
+        .description("Initial condition as pressure.")
+        .units( UnitSI().m() )
+        .input_default("0.0");
 
-    ADD_FIELD(storativity,"Storativity.", "1.0" );
-    	storativity.units( UnitSI().m(-1) );
-
-    time_term_fields = this->subset({"storativity"});
-    main_matrix_fields = this->subset({"anisotropy", "conductivity", "cross_section", "sigma", "bc_type", "bc_robin_sigma"});
-    rhs_fields = this->subset({"water_source_density", "bc_pressure", "bc_flux"});
+    *this += storativity
+        .name("storativity")
+        .description("Storativity.")
+        .units( UnitSI().m(-1) )
+        .input_default("1.0")
+        .flags_add(FieldFlag::in_time_term);
 
     *this += velocity.name("velocity").units( UnitSI().m().s(-1) ).flags(FieldFlag::equation_result);
 }
@@ -1496,7 +1532,10 @@ void DarcyFlowMH_Steady::assembly_linear_system() {
 
 	data_.set_time(time_->step());
 	//DBGMSG("Assembly linear system\n");
-	if (data_.changed()) {
+    
+	if ( data_.subset(FieldFlag::in_main_matrix).changed() 
+         || data_.subset(FieldFlag::in_time_term).changed() 
+         || data_.subset(FieldFlag::in_rhs).changed() ) {
 		//DBGMSG("  Data changed\n");
 		// currently we have no optimization for cases when just time term data or RHS data are changed
 	    START_TIMER("full assembly");
