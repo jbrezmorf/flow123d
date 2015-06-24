@@ -315,6 +315,9 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
 
     	create_linear_system();
     	output_object = new DarcyFlowMHOutput(this, in_rec.val<Input::Record>("output"));
+        
+        // set velocity FieldFE
+        velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
     }
 }
 
@@ -326,13 +329,15 @@ DarcyFlowMH_Steady::DarcyFlowMH_Steady(Mesh &mesh_in, const Input::Record in_rec
 void DarcyFlowMH_Steady::update_solution() {
     START_TIMER("Solving MH system");
 
-
+    DBGMSG("darcy: vel changed: %d %f\n",data_.velocity.changed(), data_.velocity.time());
     if (time_->is_end()) return;
 
     if (! time_->is_steady()) time_->next_time();
+   
+// set data velocity from FieldFE at the current time
+    data_.velocity.set_field(mesh_->region_db().get_region_set("ALL"), velocity_, time_->t());
+
     
-
-
     assembly_linear_system();
     int convergedReason = schur0->solve();
 
@@ -343,9 +348,7 @@ void DarcyFlowMH_Steady::update_solution() {
 
     solution_changed_for_scatter=true;
     
-    // set velocity FieldFE after solving the linsys
-    velocity_->set_fe_data(velocity_dh_, map1_, map2_, map3_, &(sol_vec));
-
+    DBGMSG("darcy: vel changed: %d %f \t time:%f\n",data_.velocity.changed(), data_.velocity.time(), time_->t());
     output_data();
 
     if (time_->is_steady()) time_->next_time();

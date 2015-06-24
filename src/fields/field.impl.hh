@@ -163,6 +163,7 @@ auto Field<spacedim, Value>::disable_where(
 		const Field<spacedim, typename FieldValue<spacedim>::Enum > &control_field,
 		const vector<FieldEnum> &value_list) -> Field &
 {
+//     DBGMSG("Set control field '%s' for field: '%s'\n", control_field.name().c_str(),name_.c_str());
     no_check_control_field_=std::make_shared<ControlField>(control_field);
     shared_->no_check_values_=value_list;
     return *this;
@@ -180,9 +181,10 @@ void Field<spacedim,Value>::set_mesh(const Mesh &in_mesh) {
 
     // initialize table if it is empty, we assume that the RegionDB is closed at this moment
 	region_fields_.resize( mesh()->region_db().size() );
-	RegionHistory init_history(history_length_limit_);	// capacity
+    current_region_history_points_.resize( mesh()->region_db().size());
+	RegionHistoryX init_history(history_length_limit_);	// capacity
     data_->region_history_.resize( mesh()->region_db().size(), init_history );
-
+    
     if (no_check_control_field_) no_check_control_field_->set_mesh(in_mesh);
 }
 
@@ -202,6 +204,17 @@ template <int spacedim, class Value>
 bool Field<spacedim, Value>::is_constant(Region reg) {
 	ASSERT_LESS(reg.idx(), this->region_fields_.size());
     FieldBasePtr region_field = this->region_fields_[reg.idx()];
+//     DBGMSG("Is constant field: '%s' on reg %d?\n", name_.c_str(), reg.idx());
+//     std::cout << "constant check ptr: " <<  region_field <<  std::endl;
+    
+//     {
+//         unsigned int i = 0;
+//         for(auto &f : region_fields_)
+//         {
+//             std::cout << i << " constant check ptr: " << f <<  std::endl;
+//             i++;
+//         }
+//     }
     return (region_field && typeid(*region_field) == typeid(FieldConstant<spacedim, Value>));
 }
 
@@ -222,10 +235,22 @@ void Field<spacedim, Value>::set_field(
 
     HistoryPoint hp = HistoryPoint(time, field);
     for(const Region &reg: domain) {
-    	RegionHistory &region_history = data_->region_history_[reg.idx()];
+    	RegionHistoryX &region_history = data_->region_history_[reg.idx()];
     	// insert hp into descending time sequence
-    	ASSERT( region_history.size() == 0 || region_history[0].first < hp.first, "Can not insert smaller time %g then last time %g in field's history.\n",
-    			hp.first, region_history[0].first );
+//         ASSERT( region_history.size() == 0 || region_history[0].first < hp.first, "Can not insert smaller time %g then last time %g in field's history.\n",
+//                 hp.first, region_history[0].first );
+        if( region_history.size() > 0 )
+        {
+            HistoryPoint & hp_last = region_history.at(0);
+            if (hp_last.first == hp.first) // this time in history is already written -> reset the field
+            {
+                hp_last.second = field;
+                continue;
+            }
+        }
+        
+    	ASSERT( region_history.size() == 0 || region_history.at(0).first < hp.first, "Can not insert smaller time %g then last time %g in field's history.\n",
+    			hp.first, region_history.at(0).first );
     	region_history.push_front(hp);
     }
     set_history_changed();
@@ -250,7 +275,7 @@ bool Field<spacedim, Value>::set_time(const TimeStep &time)
 {
 	ASSERT( mesh() , "NULL mesh pointer of field '%s'. set_mesh must be called before.\n",name().c_str());
 	ASSERT( limit_side_ != LimitSide::unknown, "Must set limit side on field '%s' before calling set_time.\n",name().c_str());
-
+    DBGMSG("set_time on field: %s\n", name_.c_str());
     // We perform set_time only once for every time.
     if (time.end() == last_time_)  return changed();
     last_time_=time.end();
@@ -260,7 +285,7 @@ bool Field<spacedim, Value>::set_time(const TimeStep &time)
                 no_check_control_field_->set_limit_side(limit_side_);
                 no_check_control_field_->set_time(time);
         }
-        
+    
     set_time_result_ = TimeStatus::constant;
     
     // read all descriptors satisfying time.ge(input_time)
@@ -270,12 +295,13 @@ bool Field<spacedim, Value>::set_time(const TimeStep &time)
     // set time on all regions
     // for regions that match type of the field domain
     for(const Region &reg: mesh()->region_db().get_region_set("ALL") ) {
-    	auto rh = data_->region_history_[reg.idx()];
-
+    	RegionHistoryX & rh = data_->region_history_[reg.idx()];
+        DBGMSG("reg = %s \n",reg.label().c_str());
     	// skip regions with no matching BC flag
     	// skipping regions with empty history - no_check regions
         if (reg.is_boundary() == is_bc() && !rh.empty() ) {
-        	double last_time_in_history = rh.front().first;
+        	double last_time_in_history = rh.at(0).first;
+//             double last_time_in_history = rh.front().first;
         	unsigned int history_size=rh.size();
         	unsigned int i_history;
         	// set history index
@@ -293,14 +319,43 @@ bool Field<spacedim, Value>::set_time(const TimeStep &time)
         	i_history=min(i_history, history_size - 1);
         	ASSERT(i_history >= 0, "Empty field history.");
         	// possibly update field pointer
-        	auto new_ptr = rh.at(i_history).second;
-        	if (new_ptr != region_fields_[reg.idx()]) {
-        		region_fields_[reg.idx()]=new_ptr;
-        		set_time_result_ = TimeStatus::changed;
-        	}
-        	// let FieldBase implementation set the time
-    		if ( new_ptr->set_time(time) )  set_time_result_ = TimeStatus::changed;
+//         	auto new_ptr = rh.at(i_history).second;
+            auto new_iter = rh.iterator(i_history);
+//             if (i_history != history_absolute_iter_[reg.idx()]) 
+//             {
+//                 DBGMSG("size = %d ihistory %d regidx %d\n",history_absolute_iter_.size(), i_history, reg.idx());
+//                 history_absolute_iter_[reg.idx()] = i_history;
+//                 region_fields_[reg.idx()] = new_ptr;
+//                 set_time_result_ = TimeStatus::changed;
+//             }
+            if ( new_iter != current_region_history_points_[reg.idx()] ) 
+            {
+                std::cout << "new_iter.t = " << new_iter->first << "  new_iter.ptr = " << new_iter->second << std::endl;
+                DBGMSG("size = %d ihistory %d regidx %d %s\n",rh.size(), i_history, reg.idx(), name_.c_str());
+//                 rh.set_current(new_iter);
+                current_region_history_points_[reg.idx()] = new_iter;
+                region_fields_[reg.idx()] = new_iter->second;
+                set_time_result_ = TimeStatus::changed;
+            }
 
+//         	if (new_ptr != region_fields_[reg.idx()]) {
+//                 DBGMSG("size = %d ihistory %d regidx %d %s\n",rh.size(), i_history, reg.idx(), name_.c_str());
+//         		region_fields_[reg.idx()]=new_ptr;
+//         		set_time_result_ = TimeStatus::changed;
+//         	}
+        	// let FieldBase implementation set the time
+//     		if ( new_ptr->set_time(time) )  set_time_result_ = TimeStatus::changed;
+            if ( new_iter->second->set_time(time) )  set_time_result_ = TimeStatus::changed;
+
+            rh.view(std::cout);
+//                 {
+//                 unsigned int i = 0;
+//                 for(auto &f : region_fields_)
+//                 {
+//                     std::cout << i << " region fields ptr: " << f <<  std::endl;
+//                     i++;
+//                 }
+//             }
         }
     }
 
@@ -389,12 +444,14 @@ void Field<spacedim,Value>::update_history(const TimeStep &time) {
 			// get field instance   
 			for(auto rit = factories_.rbegin() ; rit != factories_.rend(); ++rit) {
 				FieldBasePtr field_instance = (*rit)->create_field(*(shared_->list_it_), *this);
+                DBGMSG("update rh: field instance created\n");
 				if (field_instance)  // skip descriptors without related keys
 				{
 					// add to history
 					ASSERT_EQUAL( field_instance->n_comp() , n_comp());
 					field_instance->set_mesh( mesh() , is_bc() );
 					for(const Region &reg: domain) {
+                        DBGMSG("update rh: input_time = %f name=%s\n", input_time, name_.c_str());
 						data_->region_history_[reg.idx()].push_front(
 								HistoryPoint(input_time, field_instance)
 						);
@@ -418,8 +475,12 @@ void Field<spacedim,Value>::check_initialized_region_fields_() {
 
     for(const Region &reg : mesh()->region_db().get_region_set("ALL") )
         if (reg.is_boundary() == is_bc()) {      		// for regions that match type of the field domain
-            RegionHistory &rh = data_->region_history_[reg.idx()];
-        	if ( rh.empty() ||	! rh[0].second)   // empty region history
+               RegionHistoryX &rh = data_->region_history_[reg.idx()];
+               DBGMSG("field: %s, reg: %s, rh size: %d \n",name_.c_str(),reg.label().c_str(),rh.size());
+               rh.view(std::cout);
+            if ( rh.empty() ||  ! rh.at(0).second)   // empty region history
+//             RegionHistory &rh = data_->region_history_.at(reg.idx());
+//         	if ( rh.empty() ||	! rh.begin()->second)   // empty region history
             {
         		// test if check is turned on and control field is FieldConst
                 if (no_check_control_field_ && no_check_control_field_->is_constant(reg) ) {
@@ -480,6 +541,73 @@ typename Field<spacedim,Value>::FieldBasePtr Field<spacedim,Value>::FactoryBase:
 		return FieldBasePtr();
 }
 
+
+
+
+
+
+
+template<int spacedim, class Value>
+Field<spacedim,Value>::RegionHistoryX::RegionHistoryX(typename Field<spacedim,Value>::RegionHistoryX::size_type capacity)
+: //current_history_point_(0), 
+size_(0), capacity_(capacity)
+{
+//     Field<spacedim,Value>::FieldBasePtr ptr;
+//     Field<spacedim,Value>::HistoryPoint hp = Field<spacedim,Value>::HistoryPoint(-numeric_limits<double>::infinity(), ptr);
+//     region_history_.resize(size, hp);
+    
+//     region_history_.reserve(capacity);
+//     for(auto& hp : region_history_) hp.first = -numeric_limits<double>::infinity();
+}
+
+template<int spacedim, class Value>
+inline Field<spacedim,Value>::RegionHistoryX::RegionHistoryX(const Field<spacedim,Value>::RegionHistoryX &rh)
+: region_history_(rh.region_history_), 
+// current_history_point_(rh.current_history_point_), 
+size_(rh.size_), capacity_(rh.capacity_)
+{
+}
+
+template<int spacedim, class Value>
+void Field<spacedim,Value>::RegionHistoryX::push_front(const typename Field<spacedim,Value>::HistoryPoint& hp)
+{
+//     if(region_history_.size() == 0)
+//     {
+//         region_history_.push_back(hp);
+//         return;
+//     }
+    
+//     if(region_history_.size() < capacity_)
+//     {
+// //         region_history_.insert( region_history_.begin(), hp);
+//         region_history_.push_front(hp);
+//     }
+//     else
+//     {
+//         region_history_.insert( region_history_.begin(), hp);
+//         region_history_.pop_back();
+//     }
+    DBGMSG("region history push_front\n");
+    if(size_ < capacity_)
+    {
+        region_history_.push_front(hp);
+        size_++;
+        return;
+    }
+    
+    region_history_.erase_after(iterator(size_-2));
+    region_history_.push_front(hp);
+}
+
+template<int spacedim, class Value>
+void Field<spacedim,Value>::RegionHistoryX::view(ostream& stream)
+{
+    typename Field<spacedim,Value>::RegionHistoryX::RegionHistoryIterator it = region_history_.begin();
+    for(unsigned int i=0; i < size_; i++, it++)
+    {
+        stream << i << "\t" << it->first << "\t" << it->second << endl;
+    }
+}
 
 
 #endif /* FIELD_IMPL_HH_ */

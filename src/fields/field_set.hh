@@ -184,7 +184,11 @@ public:
      * Collective interface to @p FieldCommonBase::set_mesh().
      */
     void set_time(const TimeStep &time) {
-        for(auto field : field_list) field->set_time(time);
+        for(auto field : field_list) 
+        {
+            field->set_time(time);
+            DBGMSG("set time on field '%s', field_time=%f field_changed=%d\n",field->name().c_str(), field->time(), field->changed());
+        }
     }
 
     /**

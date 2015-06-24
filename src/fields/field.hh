@@ -9,6 +9,7 @@
 #define FIELD_HH_
 
 #include <memory>
+#include <forward_list>
 using namespace std;
 
 #include <boost/circular_buffer.hpp>
@@ -258,14 +259,39 @@ protected:
     /// Pair: time, pointer to FieldBase instance
     typedef pair<double, FieldBasePtr> HistoryPoint;
     /// Nearest history of one region.
-    typedef boost::circular_buffer<HistoryPoint> RegionHistory;
+//     typedef boost::circular_buffer<HistoryPoint> RegionHistory;
 
+    class RegionHistoryX
+    {
+        typedef typename std::forward_list< HistoryPoint >::size_type size_type;
+        std::forward_list< HistoryPoint > region_history_;
+        
+        size_type size_;
+        size_type capacity_;
+        
+    public:
+         typedef typename std::forward_list< HistoryPoint >::iterator RegionHistoryIterator;
+//         RegionHistoryX();
+        RegionHistoryX(RegionHistoryX::size_type capacity);
+        RegionHistoryX(const RegionHistoryX & rh);
+        
+        HistoryPoint & at(unsigned int i);
+        RegionHistoryIterator begin();
+        RegionHistoryIterator iterator(unsigned int i);
+        void push_front(const HistoryPoint& hp);
+        bool empty() const;
+        size_type size() const;
+        
+        void view(ostream & stream);
+        
+    };
+    
     struct SharedData {
 
         /**
          *  History for every region. Shared among copies.
          */
-         std::vector< RegionHistory >  region_history_;
+         std::vector< RegionHistoryX >  region_history_;
     };
 
     /**************** Data per copy **************/
@@ -286,7 +312,11 @@ protected:
      * Table with pointers to fields on individual regions.
      */
     std::vector< FieldBasePtr > region_fields_;
-
+    /**
+     * Table with circular buffer iterators to fields on individual regions.
+     */
+    std::vector< typename RegionHistoryX::RegionHistoryIterator > current_region_history_points_;
+    
     std::vector<std::shared_ptr<FactoryBase> >  factories_;
 
 
@@ -334,8 +364,39 @@ inline void Field<spacedim,Value>::value_list(const std::vector< Point >  &point
 }
 
 
+template<int spacedim, class Value>
+inline typename Field<spacedim,Value>::RegionHistoryX::RegionHistoryIterator Field<spacedim,Value>::RegionHistoryX::begin()
+{
+    ASSERT( ! region_history_.empty(), "History is empty.");
+    return region_history_.begin();
+}
 
+template<int spacedim, class Value>
+inline typename Field<spacedim,Value>::RegionHistoryX::RegionHistoryIterator Field<spacedim,Value>::RegionHistoryX::iterator(unsigned int i)
+{
+    ASSERT( i <= size_,"Index exceeded history size!");
+    typename Field<spacedim,Value>::RegionHistoryX::RegionHistoryIterator it = region_history_.begin();
+    for(unsigned int j=0; j < i; j++) it++;
+    return it;
+}
 
+template<int spacedim, class Value>
+inline typename Field<spacedim,Value>::HistoryPoint & Field<spacedim,Value>::RegionHistoryX::at(unsigned int i)
+{
+    return *(iterator(i));
+}
+
+template<int spacedim, class Value>
+inline typename Field<spacedim,Value>::RegionHistoryX::size_type Field<spacedim,Value>::RegionHistoryX::size() const
+{
+    return size_;
+}
+
+template<int spacedim, class Value>
+inline bool Field<spacedim,Value>::RegionHistoryX::empty() const
+{
+    return region_history_.empty();
+}
 
 
 
