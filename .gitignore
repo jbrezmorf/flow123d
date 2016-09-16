@@ -1,6 +1,8 @@
 config.cmake
 profiler_info*.log
 flow*.log
+*.orig.*
+*.orig
 unit_tests/*/makefile
 unit_tests/makefile
 unit_tests/fields/speed_test_*.log
@@ -51,3 +53,14 @@ doc/reference_manual/flow_version.tex
 bin/pythonenv.sh
 tests/runtest.sh
 bin/runtest.sh
+
+/config/jenkins.ini
+/config/jenkins-job/jobs/*.yaml
+/config/jenkins-job/jenkins.ini
+
+/tests/runtest
+/integration_tests/runtest
+
+# add test results to ignore
+/integration_tests/*/test_results
+/integration_tests/*/output
